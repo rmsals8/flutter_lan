@@ -49,6 +49,12 @@ dependencies:
   
   # 라우팅 및 UI 관련 패키지
   email_validator: ^2.1.17
+  
+  # 추가가 필요한 패키지 - 퀴즈 앱 기능을 위해
+  path_provider: ^2.1.1
+  open_file: ^3.3.2
+  file_picker: ^5.5.0
+  permission_handler: ^10.4.5
 
 dev_dependencies:
   flutter_test:

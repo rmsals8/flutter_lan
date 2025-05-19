@@ -1,99 +1,132 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
-import '../services/storage_service.dart';
 
 class ApiService {
-  final StorageService _storageService = StorageService();
+  final String baseUrl = AppConfig.apiBaseUrl;
   
-  // HTTP GET 요청
-  Future<Map<String, dynamic>> get(String endpoint, {Map<String, String>? queryParams}) async {
-    final String? token = await _storageService.getToken();
-    final Map<String, String> headers = {
+  // 토큰 가져오기
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
+  // HTTP Headers 설정
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _getToken();
+    return {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+  }
 
-    final Uri uri = Uri.parse('${AppConfig.apiBaseUrl}$endpoint')
-        .replace(queryParameters: queryParams);
-
+  // GET 요청
+  Future<dynamic> get(String endpoint, {Map<String, dynamic>? queryParams}) async {
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$baseUrl$endpoint').replace(
+      queryParameters: queryParams?.map((key, value) => MapEntry(key, value.toString())),
+    );
+    
     try {
       final response = await http.get(uri, headers: headers);
       return _handleResponse(response);
     } catch (e) {
-      throw Exception('통신 오류가 발생했습니다: $e');
+      debugPrint('GET 요청 오류: $e');
+      throw Exception('네트워크 오류가 발생했습니다.');
     }
   }
 
-  // HTTP POST 요청
-  Future<Map<String, dynamic>> post(String endpoint, dynamic body) async {
-    final String? token = await _storageService.getToken();
-    final Map<String, String> headers = {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-
+  // POST 요청
+  Future<dynamic> post(String endpoint, dynamic body) async {
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$baseUrl$endpoint');
+    
     try {
       final response = await http.post(
-        Uri.parse('${AppConfig.apiBaseUrl}$endpoint'),
+        uri,
         headers: headers,
-        body: json.encode(body),
+        body: jsonEncode(body),
       );
       return _handleResponse(response);
     } catch (e) {
-      throw Exception('통신 오류가 발생했습니다: $e');
+      debugPrint('POST 요청 오류: $e');
+      throw Exception('네트워크 오류가 발생했습니다.');
     }
   }
-  
-  // HTTP DELETE 요청
-  Future<Map<String, dynamic>> delete(String endpoint, {dynamic body}) async {
-    final String? token = await _storageService.getToken();
-    final Map<String, String> headers = {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
 
+  // PUT 요청
+  Future<dynamic> put(String endpoint, dynamic body) async {
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$baseUrl$endpoint');
+    
     try {
-      final response = await http.delete(
-        Uri.parse('${AppConfig.apiBaseUrl}$endpoint'),
+      final response = await http.put(
+        uri,
         headers: headers,
-        body: body != null ? json.encode(body) : null,
+        body: jsonEncode(body),
       );
       return _handleResponse(response);
     } catch (e) {
-      throw Exception('통신 오류가 발생했습니다: $e');
+      debugPrint('PUT 요청 오류: $e');
+      throw Exception('네트워크 오류가 발생했습니다.');
     }
   }
 
-  // HTTP 응답 처리
-  Map<String, dynamic> _handleResponse(http.Response response) {
+  // DELETE 요청
+Future<dynamic> delete(String endpoint, {dynamic body}) async {
+  final headers = await _getHeaders();
+  final uri = Uri.parse('$baseUrl$endpoint');
+  
+  try {
+    final response = body != null 
+      ? await http.delete(
+          uri, 
+          headers: headers,
+          body: jsonEncode(body),
+        )
+      : await http.delete(uri, headers: headers);
+      
+    return _handleResponse(response);
+  } catch (e) {
+    debugPrint('DELETE 요청 오류: $e');
+    throw Exception('네트워크 오류가 발생했습니다.');
+  }
+}
+  // 파일 다운로드 URL 생성
+  String getDownloadUrl(String endpoint) {
+    return '$baseUrl$endpoint';
+  }
+
+  // 응답 처리
+  dynamic _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      // 응답 본문이 없거나 비어있는 경우 처리
+      // 응답이 비어있는 경우 처리
       if (response.body.isEmpty) {
-        return {'message': 'Success'};
+        return {};
       }
       
-      // JSON 파싱 시도
+      // JSON 응답 파싱
       try {
-        return json.decode(response.body);
+        return jsonDecode(response.body);
       } catch (e) {
-        // JSON이 아닌 경우 평문 텍스트로 처리
-        return {'message': response.body};
+        debugPrint('JSON 파싱 오류: $e');
+        return response.body;
       }
     } else {
       // 에러 응답 처리
+      String message = '오류가 발생했습니다.';
       try {
-        final Map<String, dynamic> errorResponse = json.decode(response.body);
-        throw Exception(errorResponse['message'] ?? '서버 오류가 발생했습니다');
+        final errorData = jsonDecode(response.body);
+        message = errorData['message'] ?? '서버 오류가 발생했습니다.';
       } catch (e) {
-        if (e is Exception) {
-          throw e;
-        } else {
-          throw Exception(response.body.isNotEmpty 
-              ? response.body 
-              : '서버 오류가 발생했습니다 (${response.statusCode})');
-        }
+        message = response.body.isNotEmpty 
+            ? response.body 
+            : '오류 코드: ${response.statusCode}';
       }
+      
+      throw Exception(message);
     }
   }
 }
