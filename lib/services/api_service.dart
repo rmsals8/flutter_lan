@@ -7,6 +7,12 @@ import '../config/app_config.dart';
 class ApiService {
   final String baseUrl = AppConfig.apiBaseUrl;
   
+
+  // 토큰 가져오기 (public 메소드로 변경)
+Future<String?> getToken() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('auth_token');
+}
   // 토큰 가져오기
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();

@@ -28,23 +28,40 @@ class FileService {
     }
   }
   
-  // 파일 다운로드
+  // 파일 다운로드 
   Future<File> downloadFile(int fileId, String fileName) async {
     try {
-      final token = await _getToken();
-      if (token == null) {
-        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
-      }
-      
-      final downloadUrl = _apiService.baseUrl + '/api/files/download/$fileId';
+      // 파일 다운로드 URL 가져오기
+      final downloadUrl = _apiService.getDownloadUrl('/api/files/download/$fileId');
+      debugPrint('파일 다운로드 URL: $downloadUrl'); // URL 로그
+
+      // 인증 토큰 가져오기
+      final token = await _apiService.getToken();
+      debugPrint('인증 토큰: ${token?.substring(0, 20)}...'); // 토큰 일부만 로그 (보안)
       
       // 헤더에 인증 토큰 추가
+      final headers = {
+        'Authorization': 'Bearer $token',
+      };
+      debugPrint('요청 헤더: $headers');
+      
+      // getDownloadUrl 메서드 내부에서 이미 토큰을 URL에 추가하는지 확인
+      final parsedUrl = Uri.parse(downloadUrl);
+      debugPrint('파싱된 URL: ${parsedUrl.toString()}');
+      debugPrint('URL에 토큰 파라미터 포함됨: ${parsedUrl.queryParameters.containsKey('token')}');
+      
+      // URL에 이미 토큰이 있다면 제거하고 새 URL 구성
+      final Uri cleanUrl = parsedUrl.queryParameters.containsKey('token')
+          ? Uri.parse('${parsedUrl.origin}${parsedUrl.path}')
+          : parsedUrl;
+      debugPrint('정리된 URL: ${cleanUrl.toString()}');
+      
       final response = await http.get(
-        Uri.parse(downloadUrl),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
+        cleanUrl, // 토큰이 제거된 URL 사용
+        headers: headers,
       );
+      
+      debugPrint('응답 상태 코드: ${response.statusCode}');
       
       if (response.statusCode >= 200 && response.statusCode < 300) {
         // 임시 디렉토리에 파일 저장
@@ -52,10 +69,12 @@ class FileService {
         final filePath = '${directory.path}/$fileName';
         final file = File(filePath);
         await file.writeAsBytes(response.bodyBytes);
+        debugPrint('파일 저장 성공: $filePath (${response.bodyBytes.length} bytes)');
         return file;
       } else {
-        debugPrint('파일 다운로드 실패: ${response.statusCode}, 메시지: ${response.body}');
-        throw Exception('파일 다운로드 실패: ${response.statusCode}');
+        final errorMsg = '파일 다운로드 실패: ${response.statusCode}, 응답: ${response.body.length > 100 ? response.body.substring(0, 100) + "..." : response.body}';
+        debugPrint(errorMsg);
+        throw Exception(errorMsg);
       }
     } catch (e) {
       debugPrint('파일 다운로드 오류: $e');
@@ -72,37 +91,54 @@ class FileService {
       rethrow;
     }
   }
-  
-  // PDF 파일 다운로드 후 열기 (외부 앱 실행)
+
+  // PDF 파일 다운로드 후 열기 (외부 앱 실행) 
   Future<String> downloadAndOpenPdf(int quizId, String fileName) async {
     try {
-      final token = await _getToken();
-      if (token == null) {
-        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
-      }
+      // 파일 다운로드 URL 가져오기
+      final downloadUrl = _apiService.getDownloadUrl('/api/quizzes/$quizId/pdf');
+      debugPrint('PDF 다운로드 URL: $downloadUrl'); // URL 로그
       
-      final downloadUrl = _apiService.baseUrl + '/api/quizzes/$quizId/pdf';
+      // 인증 토큰 가져오기
+      final token = await _apiService.getToken();
+      debugPrint('인증 토큰: ${token?.substring(0, 20)}...'); // 토큰 일부만 로그 (보안)
       
       // 헤더에 인증 토큰 추가
+      final headers = {
+        'Authorization': 'Bearer $token',
+      };
+      debugPrint('요청 헤더: $headers');
+      
+      // getDownloadUrl 메서드 내부에서 이미 토큰을 URL에 추가하는지 확인
+      final parsedUrl = Uri.parse(downloadUrl);
+      debugPrint('파싱된 URL: ${parsedUrl.toString()}');
+      debugPrint('URL에 토큰 파라미터 포함됨: ${parsedUrl.queryParameters.containsKey('token')}');
+      
+      // URL에 이미 토큰이 있다면 제거하고 새 URL 구성
+      final Uri cleanUrl = parsedUrl.queryParameters.containsKey('token')
+          ? Uri.parse('${parsedUrl.origin}${parsedUrl.path}')
+          : parsedUrl;
+      debugPrint('정리된 URL: ${cleanUrl.toString()}');
+      
       final response = await http.get(
-        Uri.parse(downloadUrl),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/pdf',
-        },
+        cleanUrl, // 토큰이 제거된 URL 사용
+        headers: headers,
       );
+      
+      debugPrint('응답 상태 코드: ${response.statusCode}');
       
       if (response.statusCode >= 200 && response.statusCode < 300) {
         // 임시 디렉토리에 파일 저장
         final directory = await getTemporaryDirectory();
-        final filePath = '${directory.path}/$fileName.pdf';
+        final filePath = '${directory.path}/$fileName';
         final file = File(filePath);
         await file.writeAsBytes(response.bodyBytes);
-        debugPrint('PDF 저장 성공: $filePath');
+        debugPrint('PDF 저장 성공: $filePath (${response.bodyBytes.length} bytes)');
         return file.path;
       } else {
-        debugPrint('PDF 다운로드 실패: ${response.statusCode}, 메시지: ${response.body}');
-        throw Exception('PDF 다운로드 실패: ${response.statusCode}');
+        final errorMsg = 'PDF 다운로드 실패: ${response.statusCode}, 응답: ${response.body.length > 100 ? response.body.substring(0, 100) + "..." : response.body}';
+        debugPrint(errorMsg);
+        throw Exception(errorMsg);
       }
     } catch (e) {
       debugPrint('PDF 다운로드 오류: $e');
