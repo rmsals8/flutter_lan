@@ -50,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
         setState(() {
-          _errorMessage = authProvider.errorMessage;
+          _errorMessage = authProvider.errorMessage ?? '로그인에 실패했습니다.';
         });
       }
     } catch (e) {

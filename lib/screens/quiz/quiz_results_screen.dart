@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../config/theme.dart';
-import '../models/quiz_attempt.dart';
-import '../models/quiz_question.dart';
-import '../services/quiz_service.dart';
-import '../widgets/common/loading_spinner.dart';
+import '../../config/theme.dart';
+import '../../models/quiz_attempt.dart';
+import '../../models/quiz_question.dart';
+import '../../services/quiz_service.dart';
+import '../../widgets/common/loading_spinner.dart';
 
 class QuizResultsScreen extends StatefulWidget {
   const QuizResultsScreen({Key? key}) : super(key: key);

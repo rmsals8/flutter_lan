@@ -165,7 +165,7 @@ class AuthService {
     }
   }
   
-  // 인증 코드 요청
+  // 인증 코드 요청 메서드 추가
   Future<String> getVerificationCode(String verificationToken) async {
     try {
       final response = await _apiService.get(
@@ -180,7 +180,7 @@ class AuthService {
     }
   }
   
-  // 이메일 인증
+  // 이메일 인증 메서드 추가
   Future<String> verifyEmail(String email, String code) async {
     try {
       final response = await _apiService.post(AppConfig.apiVerifyEmail, {
@@ -195,7 +195,7 @@ class AuthService {
     }
   }
   
-  // 인증번호 재발송
+  // 인증번호 재발송 메서드 추가
   Future<String> resendVerification(String email) async {
     try {
       final response = await _apiService.post(AppConfig.apiResendVerification, {
@@ -209,7 +209,7 @@ class AuthService {
     }
   }
   
-  // 계정 찾기용 인증 코드 발송
+  // 계정 찾기용 인증 코드 발송 메서드 추가
   Future<String> sendVerificationForCredential(String email) async {
     try {
       final response = await _apiService.post(AppConfig.apiSendVerificationForCredential, {
@@ -223,7 +223,7 @@ class AuthService {
     }
   }
   
-  // 아이디 찾기
+  // 아이디 찾기 메서드 추가
   Future<Map<String, dynamic>> findUsername(String email, String code) async {
     try {
       final response = await _apiService.post(AppConfig.apiFindUsername, {
@@ -238,7 +238,7 @@ class AuthService {
     }
   }
   
-  // 비밀번호 재설정
+  // 비밀번호 재설정 메서드 추가
   Future<String> resetPassword(String email, String code) async {
     try {
       final response = await _apiService.post(AppConfig.apiResetPassword, {
@@ -253,7 +253,7 @@ class AuthService {
     }
   }
   
-  // 비밀번호 변경
+  // 비밀번호 변경 메서드 추가
   Future<String> changePassword(String newPassword) async {
     try {
       final response = await _apiService.post(AppConfig.apiChangePassword, {

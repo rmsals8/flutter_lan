@@ -103,6 +103,10 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
             backgroundColor: AppTheme.secondaryColor,
           ),
         );
+      } else {
+        setState(() {
+          _errorMessage = authProvider.errorMessage ?? '계정 삭제에 실패했습니다.';
+        });
       }
     } catch (e) {
       setState(() {

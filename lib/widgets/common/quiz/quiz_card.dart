@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../config/theme.dart';
-import '../../models/quiz.dart';
+import '../../../config/theme.dart';
+import '../../../models/quiz.dart';
 import 'package:intl/intl.dart';
 
 class QuizCard extends StatelessWidget {
@@ -33,7 +33,7 @@ class QuizCard extends StatelessWidget {
             ),
           ],
         ),
-        clipBehavior: Dip.hardEdge,
+        clipBehavior: Clip.hardEdge,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

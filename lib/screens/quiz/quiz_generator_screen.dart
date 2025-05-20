@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/theme.dart';
-import '../models/user_file.dart';
-import '../providers/file_provider.dart';
-import '../providers/quiz_provider.dart';
-import '../widgets/common/loading_spinner.dart';
+import '../../config/theme.dart';
+import '../../models/user_file.dart';
+import '../../providers/file_provider.dart';
+import '../../providers/quiz_provider.dart';
+import '../../widgets/common/loading_spinner.dart';
 
 class QuizGeneratorScreen extends StatefulWidget {
   const QuizGeneratorScreen({Key? key}) : super(key: key);

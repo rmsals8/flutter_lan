@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/theme.dart';
-import '../models/quiz.dart';
-import '../providers/quiz_provider.dart';
-import '../widgets/common/loading_spinner.dart';
-import '../widgets/quiz/quiz_card.dart';
+import '../../config/theme.dart';
+import '../../models/quiz.dart';
+import '../../providers/quiz_provider.dart';
+import '../../widgets/common/loading_spinner.dart';
+import '../../widgets/common/quiz/quiz_card.dart';
 
 class QuizListScreen extends StatefulWidget {
   const QuizListScreen({Key? key}) : super(key: key);

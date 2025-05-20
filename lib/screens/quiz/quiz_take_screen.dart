@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/theme.dart';
-import '../models/quiz.dart';
-import '../models/quiz_attempt.dart';
-import '../models/quiz_question.dart';
-import '../services/quiz_service.dart';
-import '../widgets/common/loading_spinner.dart';
-import '../widgets/quiz/quiz_question_widget.dart';
+import '../../config/theme.dart';
+import '../../models/quiz.dart';
+import '../../models/quiz_attempt.dart';
+import '../../models/quiz_question.dart';
+import '../../services/quiz_service.dart';
+import '../../widgets/common/loading_spinner.dart';
+import '../../widgets/common/quiz/quiz_question_widget.dart';
 
 class QuizTakeScreen extends StatefulWidget {
   const QuizTakeScreen({Key? key}) : super(key: key);
