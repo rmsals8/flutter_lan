@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:lingedge1/config/app_config.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_file.dart';
@@ -85,13 +86,13 @@ class FileService {
   // 파일 삭제
   Future<void> deleteFile(int fileId) async {
     try {
-      await _apiService.delete('/api/files/$fileId');
+      // 올바른 엔드포인트로 수정
+      await _apiService.delete('${AppConfig.apiFiles}/$fileId');
     } catch (e) {
       debugPrint('파일 삭제 오류: $e');
       rethrow;
     }
   }
-
   // PDF 파일 다운로드 후 열기 (외부 앱 실행) 
   Future<String> downloadAndOpenPdf(int quizId, String fileName) async {
     try {
