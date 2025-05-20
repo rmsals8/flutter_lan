@@ -1,4 +1,3 @@
-// lib/models/alarm.dart
 import 'package:flutter/material.dart';
 
 class Alarm {
@@ -33,7 +32,7 @@ class Alarm {
       id: id ?? this.id,
       time: time ?? this.time,
       isEnabled: isEnabled ?? this.isEnabled,
-      repeatDays: repeatDays ?? this.repeatDays,
+      repeatDays: repeatDays ?? List<bool>.from(this.repeatDays),
       label: label ?? this.label,
       soundPath: soundPath ?? this.soundPath,
       soundName: soundName ?? this.soundName,
@@ -54,11 +53,15 @@ class Alarm {
   }
 
   factory Alarm.fromJson(Map<String, dynamic> json) {
+    // repeatDays가 List<dynamic>으로 들어올 수 있으므로 명시적 변환
+    final List<dynamic> rawRepeatDays = json['repeatDays'];
+    final List<bool> parsedRepeatDays = rawRepeatDays.map((day) => day as bool).toList();
+    
     return Alarm(
       id: json['id'],
       time: TimeOfDay(hour: json['hour'], minute: json['minute']),
       isEnabled: json['isEnabled'],
-      repeatDays: List<bool>.from(json['repeatDays']),
+      repeatDays: parsedRepeatDays,
       label: json['label'],
       soundPath: json['soundPath'],
       soundName: json['soundName'],
