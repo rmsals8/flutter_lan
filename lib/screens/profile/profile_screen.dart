@@ -291,8 +291,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 24),
                   
-                  // 내 파일 섹션
-                  const UserFilesScreen(),
+                  // 내 파일 섹션 - 고정 높이 컨테이너로 감싸기
+                  Container(
+                    height: 500, // 필요에 따라 조정
+                    child: const UserFilesScreen(),
+                  ),
                   const SizedBox(height: 24),
                   
                   // 회원 탈퇴 섹션

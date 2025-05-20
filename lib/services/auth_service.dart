@@ -9,7 +9,10 @@ import 'api_service.dart';
 
 class AuthService {
   final ApiService _apiService = ApiService();
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+final GoogleSignIn _googleSignIn = GoogleSignIn(
+  scopes: ['email', 'profile'],
+  clientId: '1061899561038-97481bo6k96inl7l57uhukdqknhtl3ce.apps.googleusercontent.com', // 웹 클라이언트 ID 추가
+);
   
   // 토큰 저장
   Future<void> saveToken(String token) async {
