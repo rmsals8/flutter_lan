@@ -38,6 +38,13 @@ dependencies:
   # URL 실행 (추가 필요)
   url_launcher: ^6.1.12
 
+  flutter_local_notifications: ^19.2.1 # 로컬 알림 관리
+  timezone: ^0.10.0
+  android_alarm_manager_plus: ^4.0.7 # 안드로이드 알람 관리
+  audio_service: ^0.18.18  # 오디오 재생 백그라운드 서비스
+  just_audio: ^0.10.3  # 오디오 재생 라이브러리
+  rxdart: ^0.28.0  # 스트림 관리
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
