@@ -111,8 +111,11 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
     Alarm alarm,
     AlarmProvider alarmProvider,
   ) {
+    // 안전한 ID로 키 생성
+    String safeKeyString = 'alarm_${alarm.id % 2000000000}';
+    
     return Dismissible(
-      key: Key('alarm_${alarm.id}'),
+      key: Key(safeKeyString),
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
@@ -124,8 +127,24 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
       ),
       direction: DismissDirection.endToStart,
       onDismissed: (direction) {
-        alarmProvider.deleteAlarm(alarm.id);
+        // 즉시 상태 업데이트 후 API 호출
+        setState(() {
+          // 여기서 먼저 UI에서 제거
+          alarmProvider.alarms.removeWhere((a) => a.id == alarm.id);
+        });
         
+        // 그 다음 실제 삭제 작업 수행
+        alarmProvider.deleteAlarm(alarm.id).catchError((error) {
+          // 에러 발생 시 처리
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('알람 삭제 실패: $error')),
+          );
+          
+          // 다시 목록 로드 (오류 복구)
+          alarmProvider.initAlarms();
+        });
+        
+        // 삭제 완료 메시지 표시
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('알람이 삭제되었습니다')),
         );

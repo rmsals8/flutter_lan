@@ -84,37 +84,42 @@ class AlarmService {
     }
   }
   
-  // 알람 수정
-  Future<void> updateAlarm(Alarm alarm) async {
-    final alarms = await loadAlarms();
-    final index = alarms.indexWhere((a) => a.id == alarm.id);
-    
-    if (index != -1) {
-      // 기존 알람 취소
-      await cancelAlarm(alarms[index]);
-      
-      // 알람 업데이트
-      alarms[index] = alarm;
-      await saveAlarms(alarms);
-      
-      // 활성화된 경우 다시 예약
-      if (alarm.isEnabled) {
-        await scheduleAlarm(alarm);
-      }
-    }
-  }
+ // 알람 업데이트
+Future<void> updateAlarm(Alarm alarm) async {
+  final alarms = await loadAlarms();
+  final index = alarms.indexWhere((a) => a.id == alarm.id);
   
-  // 알람 삭제
-  Future<void> deleteAlarm(int alarmId) async {
-    final alarms = await loadAlarms();
-    final alarm = alarms.firstWhere((a) => a.id == alarmId, orElse: () => null as Alarm);
+  if (index != -1) {
+    // 기존 알람 취소 (안전한 ID 사용)
+    await cancelAlarm(alarms[index]);
     
-    if (alarm != null) {
-      await cancelAlarm(alarm);
-      alarms.removeWhere((a) => a.id == alarmId);
-      await saveAlarms(alarms);
+    // 알람 업데이트
+    alarms[index] = alarm;
+    await saveAlarms(alarms);
+    
+    // 활성화된 경우 다시 예약 (안전한 ID 사용)
+    if (alarm.isEnabled) {
+      await scheduleAlarm(alarm);
     }
   }
+}
+
+  
+ // 알람 삭제
+Future<void> deleteAlarm(int alarmId) async {
+  final alarms = await loadAlarms();
+  final alarm = alarms.firstWhere(
+    (a) => a.id == alarmId, 
+    orElse: () => null as Alarm
+  );
+  
+  if (alarm != null) {
+    // 안전한 ID로 알람 취소
+    await cancelAlarm(alarm);
+    alarms.removeWhere((a) => a.id == alarmId);
+    await saveAlarms(alarms);
+  }
+}
 
   // 간단한 알림 표시
   Future<void> showNotification({
@@ -146,42 +151,47 @@ class AlarmService {
     );
   }
 
-  // 알람 예약
-  Future<void> scheduleAlarm(Alarm alarm) async {
-    await initialize();
+ // 알람 예약
+Future<void> scheduleAlarm(Alarm alarm) async {
+  await initialize();
 
-    final alarmTime = _calculateNextAlarmTime(alarm);
-    if (alarmTime == null) return;
+  final alarmTime = _calculateNextAlarmTime(alarm);
+  if (alarmTime == null) return;
 
-    const AndroidNotificationDetails androidNotificationDetails =
-        AndroidNotificationDetails(
-      'alarm_channel',
-      '알람',
-      channelDescription: '알람 알림 채널',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
+  const AndroidNotificationDetails androidNotificationDetails =
+      AndroidNotificationDetails(
+    'alarm_channel',
+    '알람',
+    channelDescription: '알람 알림 채널',
+    importance: Importance.max,
+    priority: Priority.high,
+  );
 
-    const NotificationDetails notificationDetails =
-        NotificationDetails(android: androidNotificationDetails);
+  const NotificationDetails notificationDetails =
+      NotificationDetails(android: androidNotificationDetails);
 
-    // 최신 버전의 flutter_local_notifications API에 맞게 수정
-    // uiLocalNotificationDateInterpretation 매개변수 제거
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      alarm.id,
-      alarm.label,
-      '알람 시간입니다',
-      tz.TZDateTime.from(alarmTime, tz.local),
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: alarm.soundPath,
-    );
-  }
+  // 32비트 정수 범위 내로 ID 제한
+  int safeId = alarm.id % 2000000000;
+
+  // 최신 버전의 flutter_local_notifications API에 맞게 수정
+  // uiLocalNotificationDateInterpretation 매개변수 제거
+  await flutterLocalNotificationsPlugin.zonedSchedule(
+    safeId, // 수정된 ID 사용
+    alarm.label,
+    '알람 시간입니다',
+    tz.TZDateTime.from(alarmTime, tz.local),
+    notificationDetails,
+    androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    payload: alarm.soundPath,
+  );
+}
   
-  // 알람 취소
-  Future<void> cancelAlarm(Alarm alarm) async {
-    await flutterLocalNotificationsPlugin.cancel(alarm.id);
-  }
+// 알람 취소
+Future<void> cancelAlarm(Alarm alarm) async {
+  // ID를 32비트 정수 범위로 제한
+  int safeId = alarm.id % 2000000000;
+  await flutterLocalNotificationsPlugin.cancel(safeId);
+}
   
   // 모든 알람 취소
   Future<void> cancelAllAlarms() async {

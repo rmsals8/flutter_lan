@@ -71,71 +71,72 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   }
   
   // 알람 저장
-  Future<void> _saveAlarm() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
+ // 알람 저장
+Future<void> _saveAlarm() async {
+  if (!_formKey.currentState!.validate()) {
+    return;
+  }
+  
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    final alarmProvider = Provider.of<AlarmProvider>(context, listen: false);
+    
+    if (widget.alarm != null) {
+      // 알람 수정
+      final updatedAlarm = Alarm(
+        id: widget.alarm!.id % 2000000000, // 32비트 정수 범위 내로 제한
+        time: _selectedTime,
+        label: _label,
+        repeatDays: _repeatDays,
+        isEnabled: _isEnabled,
+        soundPath: _soundPath,
+        soundName: _soundName,
+      );
+      
+      await alarmProvider.updateAlarm(updatedAlarm);
+    } else {
+      // 새 알람 추가
+      final newAlarm = Alarm(
+        id: DateTime.now().millisecondsSinceEpoch % 2000000000, // 32비트 정수 범위 내로 제한
+        time: _selectedTime,
+        label: _label,
+        repeatDays: _repeatDays,
+        isEnabled: _isEnabled,
+        soundPath: _soundPath,
+        soundName: _soundName,
+      );
+      
+      await alarmProvider.addAlarm(newAlarm);
     }
     
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      final alarmProvider = Provider.of<AlarmProvider>(context, listen: false);
+    if (mounted) {
+      Navigator.pop(context);
       
-      if (widget.alarm != null) {
-        // 알람 수정
-        final updatedAlarm = Alarm(
-          id: widget.alarm!.id,
-          time: _selectedTime,
-          label: _label,
-          repeatDays: _repeatDays,
-          isEnabled: _isEnabled,
-          soundPath: _soundPath,
-          soundName: _soundName,
-        );
-        
-        await alarmProvider.updateAlarm(updatedAlarm);
-      } else {
-        // 새 알람 추가
-        final newAlarm = Alarm(
-          id: DateTime.now().millisecondsSinceEpoch,
-          time: _selectedTime,
-          label: _label,
-          repeatDays: _repeatDays,
-          isEnabled: _isEnabled,
-          soundPath: _soundPath,
-          soundName: _soundName,
-        );
-        
-        await alarmProvider.addAlarm(newAlarm);
-      }
-      
-      if (mounted) {
-        Navigator.pop(context);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.alarm != null ? '알람이 수정되었습니다' : '새 알람이 추가되었습니다'),
-            backgroundColor: AppTheme.secondaryColor,
-          ),
-        );
-      }
-    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('알람 저장 오류: ${e.toString()}'),
-          backgroundColor: AppTheme.errorColor,
+          content: Text(widget.alarm != null ? '알람이 수정되었습니다' : '새 알람이 추가되었습니다'),
+          backgroundColor: AppTheme.secondaryColor,
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('알람 저장 오류: ${e.toString()}'),
+        backgroundColor: AppTheme.errorColor,
+      ),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
   
   // MP3 파일 선택 화면으로 이동
   Future<void> _selectSound() async {
