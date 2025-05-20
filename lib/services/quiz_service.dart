@@ -1,5 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../models/quiz.dart';
 import '../models/quiz_question.dart';
 import '../models/quiz_attempt.dart';
@@ -8,6 +9,12 @@ import 'api_service.dart';
 
 class QuizService {
   final ApiService _apiService = ApiService();
+  
+  // 토큰 가져오기
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
   
   // 퀴즈 목록 가져오기
   Future<List<Quiz>> getUserQuizzes() async {
@@ -126,7 +133,21 @@ class QuizService {
   }
   
   // 퀴즈 PDF 다운로드 URL 가져오기
-  String getQuizPdfDownloadUrl(int quizId) {
-    return '/api/quizzes/$quizId/pdf';
+  Future<String> getQuizPdfDownloadLink(int quizId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
+      }
+      
+      final downloadUrl = '${_apiService.baseUrl}/api/quizzes/$quizId/pdf';
+      debugPrint('PDF 다운로드 URL: $downloadUrl');
+      
+      // 다운로드 URL과 토큰 정보 반환
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('PDF 다운로드 URL 가져오기 오류: $e');
+      rethrow;
+    }
   }
 }

@@ -4,8 +4,7 @@ import 'package:intl/intl.dart';
 import '../../config/theme.dart';
 import '../../models/user_file.dart';
 import '../../providers/file_provider.dart';
-import '../../services/file_service.dart';
-import '../../widgets/common/loading_spinner.dart';
+import '../../utils/browser_downloader.dart';
 
 class UserFilesScreen extends StatefulWidget {
   const UserFilesScreen({Key? key}) : super(key: key);
@@ -15,9 +14,9 @@ class UserFilesScreen extends StatefulWidget {
 }
 
 class _UserFilesScreenState extends State<UserFilesScreen> with SingleTickerProviderStateMixin {
-  final FileService _fileService = FileService();
   late TabController _tabController;
   bool _isDeleting = false;
+  bool _isDownloading = false;
   final int FILE_LIMIT_PER_TYPE = 2; // 파일 타입별 최대 저장 개수 제한
   
   @override
@@ -53,18 +52,20 @@ class _UserFilesScreenState extends State<UserFilesScreen> with SingleTickerProv
     }
   }
   
-  // 파일 다운로드 처리
-  Future<void> _handleDownload(UserFile file) async {
-    try {
-      await _fileService.downloadFile(file.id, file.fileName);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${file.fileName} 다운로드 완료')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('다운로드 오류: ${e.toString()}')),
-      );
-    }
+  // 파일 다운로드 처리 - 브라우저에서 열기
+  void _handleDownload(UserFile file) {
+    setState(() {
+      _isDownloading = true;
+    });
+    
+    BrowserDownloader.openFileInBrowser(context, file.id)
+        .then((_) {
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+            });
+          }
+        });
   }
   
   // 파일 삭제 처리
@@ -83,7 +84,7 @@ class _UserFilesScreenState extends State<UserFilesScreen> with SingleTickerProv
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(
-              foregroundColor: AppTheme.errorColor,
+              foregroundColor: Colors.red,
             ),
             child: const Text('삭제'),
           ),
@@ -180,7 +181,7 @@ class _UserFilesScreenState extends State<UserFilesScreen> with SingleTickerProv
             // 파일 목록
             Expanded(
               child: fileProvider.isLoading
-                  ? const Center(child: LoadingSpinner())
+                  ? const Center(child: CircularProgressIndicator())
                   : TabBarView(
                       controller: _tabController,
                       children: [
@@ -326,18 +327,38 @@ class _UserFilesScreenState extends State<UserFilesScreen> with SingleTickerProv
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 다운로드 버튼
+                // 브라우저에서 열기 버튼
                 IconButton(
-                  icon: const Icon(Icons.download),
+                  icon: _isDownloading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.open_in_browser),
                   color: AppTheme.primaryColor,
-                  onPressed: _isDeleting ? null : () => _handleDownload(file),
-                  tooltip: '다운로드',
+                  onPressed: (_isDownloading || _isDeleting)
+                      ? null
+                      : () => _handleDownload(file),
+                  tooltip: '브라우저에서 열기',
                 ),
                 // 삭제 버튼
                 IconButton(
-                  icon: const Icon(Icons.delete),
-                  color: AppTheme.errorColor,
-                  onPressed: _isDeleting ? null : () => _handleDelete(file),
+                  icon: _isDeleting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.delete),
+                  color: Colors.red,
+                  onPressed: (_isDownloading || _isDeleting)
+                      ? null
+                      : () => _handleDelete(file),
                   tooltip: '삭제',
                 ),
               ],

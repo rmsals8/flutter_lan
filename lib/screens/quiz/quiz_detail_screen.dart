@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:open_file/open_file.dart';
 import 'package:intl/intl.dart';
 import '../../config/theme.dart';
 import '../../models/quiz.dart';
 import '../../providers/quiz_provider.dart';
-import '../../services/file_service.dart';
-import '../../widgets/common/loading_spinner.dart';
+import '../../utils/browser_downloader.dart';
 
 class QuizDetailScreen extends StatefulWidget {
   const QuizDetailScreen({Key? key}) : super(key: key);
@@ -16,8 +14,8 @@ class QuizDetailScreen extends StatefulWidget {
 }
 
 class _QuizDetailScreenState extends State<QuizDetailScreen> {
-  final FileService _fileService = FileService();
-  bool _isDownloading = false;
+  bool _isLoading = false;
+  String? _errorMessage;
   
   @override
   void initState() {
@@ -30,29 +28,6 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
         Provider.of<QuizProvider>(context, listen: false).fetchQuizDetail(quizId);
       }
     });
-  }
-
-  // PDF 다운로드 및 열기
-  Future<void> _downloadAndOpenPdf(int quizId, String fileName) async {
-    setState(() {
-      _isDownloading = true;
-    });
-    
-    try {
-      final filePath = await _fileService.downloadAndOpenPdf(quizId, '${fileName}_with_answers.pdf');
-      // PDF 파일 열기
-      await OpenFile.open(filePath);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF 다운로드 오류: ${e.toString()}')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-        });
-      }
-    }
   }
 
   @override
@@ -69,19 +44,40 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       body: Consumer<QuizProvider>(
         builder: (context, quizProvider, child) {
           if (quizProvider.isLoading) {
-            return const LoadingSpinner(message: '퀴즈 정보를 불러오는 중...');
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
           }
           
           if (quizProvider.error != null) {
-            return ErrorDisplay(
-              message: quizProvider.error!,
-              onRetry: () {
-                final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-                if (args != null && args.containsKey('quizId')) {
-                  final quizId = args['quizId'] as int;
-                  quizProvider.fetchQuizDetail(quizId);
-                }
-              },
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    quizProvider.error!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+                      if (args != null && args.containsKey('quizId')) {
+                        final quizId = args['quizId'] as int;
+                        quizProvider.fetchQuizDetail(quizId);
+                      }
+                    },
+                    child: const Text('다시 시도'),
+                  ),
+                ],
+              ),
             );
           }
           
@@ -135,6 +131,24 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   
+                  // 에러 메시지가 있는 경우 표시
+                  if (_errorMessage != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                  
                   // 퀴즈 액션 버튼들
                   Row(
                     children: [
@@ -158,11 +172,41 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: ElevatedButton.icon(
-                          icon: const Icon(Icons.download),
-                          label: const Text('PDF 다운로드'),
-                          onPressed: _isDownloading 
+                          icon: const Icon(Icons.open_in_browser),
+                          label: _isLoading 
+                              ? const SizedBox(
+                                  width: 16, 
+                                  height: 16, 
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('PDF 보기'),
+                          onPressed: _isLoading 
                               ? null 
-                              : () => _downloadAndOpenPdf(quizDetail.id, quizDetail.title),
+                              : () {
+                                  setState(() {
+                                    _isLoading = true;
+                                    _errorMessage = null;
+                                  });
+                                  BrowserDownloader.openPdfInBrowser(context, quizDetail.id)
+                                    .then((_) {
+                                      if (mounted) {
+                                        setState(() {
+                                          _isLoading = false;
+                                        });
+                                      }
+                                    })
+                                    .catchError((error) {
+                                      if (mounted) {
+                                        setState(() {
+                                          _isLoading = false;
+                                          _errorMessage = error.toString();
+                                        });
+                                      }
+                                    });
+                                },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.warningColor,
                             padding: const EdgeInsets.symmetric(vertical: 12),
