@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'config/theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/quiz_provider.dart'; // 추가
+import 'providers/file_provider.dart'; // 추가
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/agreement_screen.dart';
@@ -27,8 +29,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => QuizProvider()),
+        ChangeNotifierProvider(create: (_) => FileProvider()),
+      ],
       child: MaterialApp(
         title: 'LinguaEdge',
         theme: AppTheme.lightTheme,
