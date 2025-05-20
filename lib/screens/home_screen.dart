@@ -52,6 +52,36 @@ class HomeScreen extends StatelessWidget {
               style: AppTheme.bodyLarge,
             ),
             const SizedBox(height: 24),
+            
+            // 마이페이지 버튼 추가
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/profile');
+              },
+              icon: const Icon(Icons.person),
+              label: const Text('마이페이지'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // 퀴즈 생성 버튼 추가
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/quizzes');
+              },
+              icon: const Icon(Icons.quiz),
+              label: const Text('퀴즈 관리'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                backgroundColor: AppTheme.secondaryColor,
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
             ElevatedButton(
               onPressed: () {
                 Navigator.pushNamed(context, '/change-password');

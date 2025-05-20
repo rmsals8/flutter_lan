@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:intl/intl.dart';
-import '../config/theme.dart';
-import '../models/quiz.dart';
-import '../providers/quiz_provider.dart';
-import '../services/file_service.dart';
-import '../widgets/common/loading_spinner.dart';
+import '../../config/theme.dart';
+import '../../models/quiz.dart';
+import '../../providers/quiz_provider.dart';
+import '../../services/file_service.dart';
+import '../../widgets/common/loading_spinner.dart';
 
 class QuizDetailScreen extends StatefulWidget {
   const QuizDetailScreen({Key? key}) : super(key: key);

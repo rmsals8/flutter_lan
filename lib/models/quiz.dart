@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lingedge1/models/quiz_question.dart';
 
 class Quiz {
   final int id;

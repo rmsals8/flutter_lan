@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../config/theme.dart';
+import '../../config/theme.dart';
 
 class LoadingSpinner extends StatelessWidget {
   final String? message;

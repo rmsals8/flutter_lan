@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../config/theme.dart';
-import '../models/user_file.dart';
-import '../providers/file_provider.dart';
-import '../services/file_service.dart';
-import '../widgets/common/loading_spinner.dart';
+import '../../config/theme.dart';
+import '../../models/user_file.dart';
+import '../../providers/file_provider.dart';
+import '../../services/file_service.dart';
+import '../../widgets/common/loading_spinner.dart';
 
 class UserFilesScreen extends StatefulWidget {
   const UserFilesScreen({Key? key}) : super(key: key);

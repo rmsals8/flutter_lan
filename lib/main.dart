@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:lingedge1/screens/profile/profile_screen.dart';
+import 'package:lingedge1/screens/quiz/quiz_detail_screen.dart';
+import 'package:lingedge1/screens/quiz/quiz_generator_screen.dart';
+import 'package:lingedge1/screens/quiz/quiz_list_screen.dart';
+import 'package:lingedge1/screens/quiz/quiz_results_screen.dart';
+import 'package:lingedge1/screens/quiz/quiz_take_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'config/theme.dart';
@@ -48,6 +54,13 @@ class MyApp extends StatelessWidget {
           '/change-password': (context) => const ChangePasswordScreen(),
           '/delete-account': (context) => const DeleteAccountScreen(),
           '/home': (context) => const HomeScreen(),
+          // 추가한 라우트들
+          '/profile': (context) => const ProfileScreen(),
+          '/quizzes': (context) => const QuizListScreen(),
+          '/quizzes/detail': (context) => const QuizDetailScreen(),
+          '/quizzes/create': (context) => const QuizGeneratorScreen(),
+          '/quizzes/take': (context) => const QuizTakeScreen(),
+          '/quizzes/results': (context) => const QuizResultsScreen(),
         },
       ),
     );

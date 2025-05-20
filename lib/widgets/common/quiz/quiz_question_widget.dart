@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../config/theme.dart';
-import '../../models/quiz_question.dart';
+import '../../../config/theme.dart';
+import '../../../models/quiz_question.dart';
 
 class QuizQuestionWidget extends StatelessWidget {
   final QuizQuestion question;
