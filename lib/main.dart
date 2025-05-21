@@ -1,3 +1,5 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -31,9 +33,8 @@ import './screens/alarm/mp3_selector_screen.dart';
 import './screens/mp3_player_screen.dart';
 import './services/alarm_service.dart';
 import './services/audio_background_handler.dart';
-import 'package:audio_service/audio_service.dart';
-import 'services/audio_background_handler.dart';
 
+// 전역 변수로 AudioHandler 선언
 late AudioHandler audioHandler;
 
 Future<void> main() async {

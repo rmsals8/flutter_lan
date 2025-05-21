@@ -63,6 +63,7 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
+      queueIndex: 0,
     ));
   }
   
@@ -160,14 +161,6 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await stop();
   }
   
-  // 플레이어 상태 확인
-  Future<bool> isPlaying() async {
-    return _player.playing;
-  }
-  
-  // 현재 재생 시간 가져오기
-  Stream<Duration> get positionStream => _player.positionStream;
-  
-  // 총 재생 시간 가져오기
-  Duration? get duration => _player.duration;
+  // 플레이어 인스턴스 getter (필요시 사용)
+  AudioPlayer get player => _player;
 }

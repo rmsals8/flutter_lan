@@ -1,7 +1,6 @@
 // lib/screens/mp3_player_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_service/audio_service.dart';
 import 'dart:io';
@@ -12,7 +11,7 @@ import '../config/theme.dart';
 import '../models/user_file.dart';
 import '../providers/file_provider.dart';
 import '../services/audio_background_handler.dart';
-import '../main.dart'; // audioHandler 전역 변수에 접근하기 위해 추가
+import '../main.dart'; // audioHandler 전역 변수 접근
 
 class MP3PlayerScreen extends StatefulWidget {
   const MP3PlayerScreen({Key? key}) : super(key: key);
@@ -22,7 +21,7 @@ class MP3PlayerScreen extends StatefulWidget {
 }
 
 class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  // 별도의 AudioPlayer 인스턴스 제거 - 오직 AudioHandler만 사용
   UserFile? _currentFile;
   bool _isInitializing = true;
   String? _errorMessage;
@@ -30,7 +29,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
   final Map<int, String> _downloadedFilePaths = {};
   bool _showMiniPlayer = false;
   
-  // 전역 변수 audioHandler 사용 (AudioService.audioHandler 대신)
+  // 전역 변수 audioHandler 사용
   late AudioHandler _audioHandler;
   
   @override
@@ -76,7 +75,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
   
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    // AudioPlayer 인스턴스 없으므로 dispose 필요 없음
     super.dispose();
   }
   
@@ -204,7 +203,6 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 이하 코드는 동일...
     if (_isInitializing) {
       return Scaffold(
         backgroundColor: AppTheme.backgroundColor,
@@ -222,8 +220,34 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
       );
     }
     
-    // 나머지 build 메서드 코드...
-    
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        appBar: AppBar(title: const Text('MP3 플레이어')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_errorMessage!, textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _isInitializing = true;
+                    _errorMessage = null;
+                  });
+                  _initializePlayer();
+                },
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -419,11 +443,12 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     
-                    // 재생 진행 표시줄
-                    StreamBuilder<Duration>(
-                      stream: _audioPlayer.positionStream,
+                    // 재생 진행 표시줄 - 수정된 부분 (PlaybackState 사용)
+                    StreamBuilder<PlaybackState>(
+                      stream: _audioHandler.playbackState,
                       builder: (context, snapshot) {
-                        final position = snapshot.data ?? Duration.zero;
+                        final playbackState = snapshot.data;
+                        final position = playbackState?.position ?? Duration.zero;
                         final duration = mediaItem.duration ?? Duration.zero;
                         
                         double progressValue = 0.0;
