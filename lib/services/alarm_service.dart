@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-
+import '../main.dart';
 import '../models/alarm.dart';
 
 class AlarmService {
@@ -53,6 +53,19 @@ class AlarmService {
       initializationSettings,
       onDidReceiveNotificationResponse: onDidReceiveNotificationResponse,
     );
+    
+    // 알림 채널 설정 (중요: Android 8.0 이상에서 필요)
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'alarm_channel',
+      '알람',
+      description: '알람 알림 채널',
+      importance: Importance.max,
+      playSound: true,
+    );
+    
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
     
     // 부팅 시 알람 복원 체크
     _checkAndRestoreAlarms();
@@ -219,221 +232,124 @@ class AlarmService {
     debugPrint('알림 표시: ID=$id, 제목=$title');
   }
 
-  // 알람 콜백 함수 - AndroidAlarmManager에서 호출됨
-  // vm:entry-point 추가
-  @pragma('vm:entry-point')
-  static Future<void> _alarmCallback(int id) async {
-    debugPrint('알람 콜백 실행: ID=$id');
-    
-    // 인스턴스 가져오기
-    final alarmService = AlarmService();
-    
-    // SharedPreferences에서 알람 정보 가져오기
-    final prefs = await SharedPreferences.getInstance();
-    final alarmJson = prefs.getString('alarm_data_$id');
-    
-    if (alarmJson != null) {
-      try {
-        final alarmMap = jsonDecode(alarmJson) as Map<String, dynamic>;
-        final label = alarmMap['label'] as String? ?? '알람';
-        final soundPath = alarmMap['soundPath'] as String? ?? 'assets/default_alarm.mp3';
-        
-        // 알림 표시
-        await alarmService.showNotification(
-          id: id,
-          title: label,
-          body: '알람 시간입니다',
-          payload: soundPath,
-        );
-        
-        // 알람 소리 재생
-        await alarmService.playAlarmSound(soundPath);
-        
-        // 반복 알람인 경우 다음 알람 예약
-        final isRepeating = alarmMap['isRepeating'] as bool? ?? false;
-        if (isRepeating) {
-          final repeatDaysJson = alarmMap['repeatDays'] as List<dynamic>?;
-          final hour = alarmMap['hour'] as int? ?? 0;
-          final minute = alarmMap['minute'] as int? ?? 0;
-          
-          if (repeatDaysJson != null) {
-            final repeatDays = List<bool>.from(repeatDaysJson.map((e) => e as bool));
-            final alarm = Alarm(
-              id: alarmMap['id'] as int? ?? id,
-              time: TimeOfDay(hour: hour, minute: minute),
-              repeatDays: repeatDays,
-              label: label,
-              soundPath: soundPath,
-              soundName: alarmMap['soundName'] as String? ?? '알람음',
-            );
-            
-            // 다음 알람 예약
-            await alarmService.scheduleAlarm(alarm);
-          }
-        }
-      } catch (e) {
-        debugPrint('알람 데이터 파싱 오류: $e');
-      }
-    } else {
-      // 알람 데이터가 없는 경우 기본 알림 표시
-      await alarmService.showNotification(
-        id: id,
-        title: '알람',
-        body: '알람 시간입니다',
-      );
-    }
+  // AlarmService 클래스의 scheduleAlarm 메서드에 로그 추가
+Future<void> scheduleAlarm(Alarm alarm) async {
+  debugPrint('======== 알람 예약 시작: ID=${alarm.id}, 시간=${alarm.time.hour}:${alarm.time.minute} ========');
+  
+  await initialize();
+  debugPrint('알람 예약: 서비스 초기화 완료');
+
+  final alarmTime = _calculateNextAlarmTime(alarm);
+  if (alarmTime == null) {
+    debugPrint('알람 예약 실패: 다음 알람 시간을 계산할 수 없음');
+    return;
   }
+  
+  debugPrint('알람 예약: 다음 알람 시간 계산됨 - ${alarmTime.toString()}');
 
-  // 알람 예약
-    Future<void> scheduleAlarm(Alarm alarm) async {
-    await initialize();
+  // 고유한 알람 ID 생성 (알람 ID + 시간 정보)
+  int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
+  
+  // 32비트 정수 범위 내로 제한 (더 간단한 ID 사용)
+  int safeId = uniqueId % 1000000;
+  debugPrint('알람 예약: 알람 ID 생성됨 - $safeId');
 
-    final alarmTime = _calculateNextAlarmTime(alarm);
-    if (alarmTime == null) {
-      debugPrint('알람 예약 실패: 다음 알람 시간을 계산할 수 없음');
-      return;
-    }
-
-    // 고유한 알람 ID 생성 (알람 ID + 시간 정보)
-    int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
+  // 알람 데이터 저장 (콜백에서 사용)
+  debugPrint('알람 예약: SharedPreferences에 데이터 저장 시작');
+  final prefs = await SharedPreferences.getInstance();
+  final alarmData = {
+    'id': alarm.id,
+    'hour': alarm.time.hour,
+    'minute': alarm.time.minute,
+    'label': alarm.label,
+    'soundPath': alarm.soundPath,
+    'soundName': alarm.soundName,
+    'isRepeating': alarm.repeatDays.contains(true),
+    'repeatDays': alarm.repeatDays,
+    'setAt': DateTime.now().toString(), // 디버깅용 설정 시간
+  };
+  
+  await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
+  debugPrint('알람 예약: 데이터 저장 완료 - ${jsonEncode(alarmData)}');
+  
+  // 알람 매니저로 예약
+  final now = DateTime.now();
+  debugPrint('알람 예약: 현재 시간 - ${now.toString()}');
+  
+  final alarmDateTime = DateTime(
+    alarmTime.year,
+    alarmTime.month,
+    alarmTime.day,
+    alarm.time.hour,
+    alarm.time.minute,
+    0,  // 초를 0으로 설정
+  );
+  
+  debugPrint('알람 예약: 알람 시간 - ${alarmDateTime.toString()}');
+  
+  // 이미 지난 시간이면 내일로 설정
+  if (alarmDateTime.isBefore(now)) {
+    debugPrint('알람 예약: 이미 지난 시간임, 내일로 설정');
+    final newAlarmDateTime = alarmDateTime.add(const Duration(days: 1));
+    debugPrint('알람 예약: 새 알람 시간 - ${newAlarmDateTime.toString()}');
     
-    // 32비트 정수 범위 내로 제한
-    int safeId = uniqueId % 2000000000;
-
-    // 알람 데이터 저장 (콜백에서 사용)
-    final prefs = await SharedPreferences.getInstance();
-    final alarmData = {
-      'id': alarm.id,
-      'hour': alarm.time.hour,
-      'minute': alarm.time.minute,
-      'label': alarm.label,
-      'soundPath': alarm.soundPath,
-      'soundName': alarm.soundName,
-      'isRepeating': alarm.repeatDays.contains(true),
-      'repeatDays': alarm.repeatDays,
-    };
-    await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
-    
-    // 알람 매니저로 예약
-    final now = DateTime.now();
-    final alarmDateTime = DateTime(
-      alarmTime.year,
-      alarmTime.month,
-      alarmTime.day,
-      alarmTime.hour,
-      alarmTime.minute,
-      0,  // 초를 0으로 설정
-    );
-    
-    // 이미 지난 시간이면 내일로 설정
-    if (alarmDateTime.isBefore(now)) {
-      debugPrint('이미 지난 시간입니다. 내일로 설정합니다.');
-      final newAlarmDateTime = alarmDateTime.add(const Duration(days: 1));
-      debugPrint('새 알람 시간: ${newAlarmDateTime.toString()}');
-      
-      // 안드로이드 알람 매니저 예약
-      final success = await AndroidAlarmManager.oneShotAt(
-        newAlarmDateTime,
-        safeId,
-        AlarmReceiver.onAlarm,  // AlarmService._alarmCallback 대신 AlarmReceiver.onAlarm 사용
-        exact: true,
-        wakeup: true,
-        rescheduleOnReboot: true,
-        alarmClock: true,
-      );
-      
-      if (success) {
-        debugPrint('AndroidAlarmManager 알람 예약 성공 (다음날): ID=$safeId, 시간=${newAlarmDateTime.toString()}');
-        
-        // Flutter Local Notifications로도 예약 (백업)
-        try {
-          // 안드로이드 알림 설정
-          final AndroidNotificationDetails androidNotificationDetails =
-              AndroidNotificationDetails(
-            'alarm_channel',
-            '알람',
-            channelDescription: '알람 알림 채널',
-            importance: Importance.max,
-            priority: Priority.high,
-            fullScreenIntent: true,
-            category: AndroidNotificationCategory.alarm,
-          );
-
-          final NotificationDetails notificationDetails =
-              NotificationDetails(android: androidNotificationDetails);
-
-          // Flutter Local Notifications로 예약
-          await flutterLocalNotificationsPlugin.zonedSchedule(
-            safeId,
-            alarm.label,
-            '알람 시간입니다',
-            tz.TZDateTime.from(newAlarmDateTime, tz.local),
-            notificationDetails,
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-            payload: alarm.soundPath,
-          );
-          
-          debugPrint('FlutterLocalNotifications 알람 예약 성공 (다음날): ID=$safeId');
-        } catch (e) {
-          debugPrint('FlutterLocalNotifications 알람 예약 실패: $e');
-        }
-      } else {
-        debugPrint('알람 예약 실패: ID=$safeId');
-      }
-      
-      return;
-    }
-    
-    // 안드로이드 알람 매니저 예약 (정상적인 미래 시간)
+    // 안드로이드 알람 매니저 예약 - 단순화된 코드
+    debugPrint('알람 예약: AndroidAlarmManager.oneShotAt 호출 준비');
     final success = await AndroidAlarmManager.oneShotAt(
-      alarmDateTime,
+      newAlarmDateTime,
       safeId,
-      AlarmReceiver.onAlarm,  // AlarmService._alarmCallback 대신 AlarmReceiver.onAlarm 사용
+      alarmCallback,
       exact: true,
       wakeup: true,
-      rescheduleOnReboot: true,
       alarmClock: true,
+      rescheduleOnReboot: true,
     );
     
     if (success) {
-      debugPrint('AndroidAlarmManager 알람 예약 성공: ID=$safeId, 시간=${alarmDateTime.toString()}');
+      debugPrint('알람 예약 성공 (다음날): ID=$safeId, 시간=${newAlarmDateTime.toString()}');
       
-      // Flutter Local Notifications로도 예약 (백업)
-      try {
-        // 안드로이드 알림 설정
-        final AndroidNotificationDetails androidNotificationDetails =
-            AndroidNotificationDetails(
-          'alarm_channel',
-          '알람',
-          channelDescription: '알람 알림 채널',
-          importance: Importance.max,
-          priority: Priority.high,
-          fullScreenIntent: true,
-          category: AndroidNotificationCategory.alarm,
-        );
-
-        final NotificationDetails notificationDetails =
-            NotificationDetails(android: androidNotificationDetails);
-
-        // Flutter Local Notifications로 예약
-        await flutterLocalNotificationsPlugin.zonedSchedule(
-          safeId,
-          alarm.label,
-          '알람 시간입니다',
-          tz.TZDateTime.from(alarmDateTime, tz.local),
-          notificationDetails,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          payload: alarm.soundPath,
-        );
-        
-        debugPrint('FlutterLocalNotifications 알람 예약 성공: ID=$safeId');
-      } catch (e) {
-        debugPrint('FlutterLocalNotifications 알람 예약 실패: $e');
-      }
+      // 알람 데이터 업데이트
+      alarmData['adjustedTime'] = newAlarmDateTime.toString();
+      await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
+      debugPrint('알람 예약: 조정된 시간으로 데이터 업데이트 완료');
     } else {
       debugPrint('알람 예약 실패: ID=$safeId');
     }
+    
+    return;
   }
+  
+  // 안드로이드 알람 매니저 예약 (정상적인 미래 시간)
+  debugPrint('알람 예약: AndroidAlarmManager.oneShotAt 호출 준비 (당일)');
+  final success = await AndroidAlarmManager.oneShotAt(
+    alarmDateTime,
+    safeId,
+    AlarmReceiver.onAlarm,
+    exact: true,
+    wakeup: true,
+    alarmClock: true,
+    rescheduleOnReboot: true,
+  );
+  
+  if (success) {
+    debugPrint('알람 예약 성공: ID=$safeId, 시간=${alarmDateTime.toString()}');
+    
+    // 알람 데이터 업데이트
+    alarmData['scheduledAt'] = DateTime.now().toString();
+    await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
+    debugPrint('알람 예약: 최종 데이터 업데이트 완료');
+    
+    // 디버깅용 - 예약된 알람 확인 
+    final checkData = await prefs.getString('alarm_data_$safeId');
+    debugPrint('알람 예약: 저장된 데이터 확인 - $checkData');
+    
+    // 다음 트리거 시간 계산 (디버깅용)
+    final triggerInSeconds = alarmDateTime.difference(now).inSeconds;
+    debugPrint('알람 예약: $triggerInSeconds초 후에 알람이 울립니다');
+  } else {
+    debugPrint('알람 예약 실패: ID=$safeId');
+  }
+}
   
   // 알람 취소
   Future<void> cancelAlarm(Alarm alarm) async {
@@ -441,7 +357,7 @@ class AlarmService {
     int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
     
     // 32비트 정수 범위 내로 제한
-    int safeId = uniqueId % 2000000000;
+    int safeId = uniqueId % 1000000;
     
     // AndroidAlarmManager 알람 취소
     final success = await AndroidAlarmManager.cancel(safeId);

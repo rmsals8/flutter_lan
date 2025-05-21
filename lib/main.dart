@@ -1,4 +1,5 @@
-// lib/main.dart
+// lib/main.dart의 메인 함수 수정
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -34,12 +35,22 @@ import './screens/alarm/mp3_selector_screen.dart';
 import './screens/mp3_player_screen.dart';
 import './services/alarm_service.dart';
 import './services/audio_background_handler.dart';
-import 'package:lingedge1/services/alarm_receiver.dart'; // 추가r
-
+import './services/alarm_receiver.dart';
 // 전역 변수로 AudioHandler 선언
 late AudioHandler audioHandler;
 
-// lib/main.dart의 main 함수 수정
+// 다양한 알람 테스트 ID들
+const int TEST_ALARM_ID_1 = 12345;
+const int TEST_ALARM_ID_2 = 67890;
+
+// main.dart에 추가
+@pragma('vm:entry-point')
+Future<void> alarmCallback(int id) async {
+  debugPrint('====== 알람 콜백 실행 (main.dart): ID=$id, 시간=${DateTime.now()} ======');
+  
+  // AlarmReceiver의 onAlarm 메서드 호출
+  await AlarmReceiver.onAlarm(id);
+}
 
 @pragma('vm:entry-point')
 void _handleNotificationResponse(NotificationResponse response) {
@@ -52,6 +63,7 @@ void _handleNotificationResponse(NotificationResponse response) {
     AlarmService().playAlarmSound('assets/default_alarm.mp3');
   }
 }
+
 Future<void> main() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,7 +90,7 @@ Future<void> main() async {
     debugPrint('타임존 초기화 오류: $e');
   }
   
-  // Android Alarm Manager 초기화 - 콜백 핸들러로 AlarmReceiver.onAlarm 등록
+  // Android Alarm Manager 초기화
   try {
     final alarmManagerInitialized = await AndroidAlarmManager.initialize();
     debugPrint('AndroidAlarmManager 초기화: ${alarmManagerInitialized ? '성공' : '실패'}');
@@ -94,6 +106,7 @@ Future<void> main() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
         
+    // 수정된 iOS 초기화 설정 (onDidReceiveLocalNotification 제거)
     final DarwinInitializationSettings initializationSettingsIOS =
         DarwinInitializationSettings();
         
@@ -147,36 +160,26 @@ Future<void> main() async {
   // 앱 시작
   runApp(const MyApp());
 }
-
-// 필요한 권한 요청
+// main.dart의 _requestPermissions 수정
 Future<void> _requestPermissions() async {
-  // 안드로이드 버전 확인 (Android 12+는 SDK 31 이상)
-  if (await Permission.scheduleExactAlarm.isDenied) {
-    await Permission.scheduleExactAlarm.request();
-    debugPrint('정확한 알람 권한 요청됨');
-  }
-  
-  // 알림 권한
-  if (await Permission.notification.isDenied) {
-    await Permission.notification.request();
-    debugPrint('알림 권한 요청됨');
-  }
-  
-  // 스토리지 권한 (파일 다운로드를 위해)
-  if (await Permission.storage.isDenied) {
-    await Permission.storage.request();
-    debugPrint('스토리지 권한 요청됨');
-  }
-  
-  // Android 13+ (SDK 33+)에서는 추가 권한 필요
+  // 이 메서드는 매우 단순하게 유지
   if (Platform.isAndroid) {
-    try {
-      await Permission.audio.request();
-      await Permission.videos.request();
-      await Permission.photos.request();
-      debugPrint('미디어 권한 요청됨');
-    } catch (e) {
-      debugPrint('미디어 권한 요청 실패: $e');
+    // 정확한 알람 권한 요청
+    final status = await Permission.scheduleExactAlarm.status;
+    if (!status.isGranted) {
+      await Permission.scheduleExactAlarm.request();
+      debugPrint('정확한 알람 권한 요청');
+    } else {
+      debugPrint('정확한 알람 권한 이미 있음');
+    }
+    
+    // 알림 권한
+    final notificationStatus = await Permission.notification.status;
+    if (!notificationStatus.isGranted) {
+      await Permission.notification.request();
+      debugPrint('알림 권한 요청');
+    } else {
+      debugPrint('알림 권한 이미 있음');
     }
   }
 }
@@ -246,7 +249,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// 파일 업로드 화면
+// 파일 업로드 화면 (간단히 유지)
 class FileUploadScreen extends StatefulWidget {
   const FileUploadScreen({Key? key}) : super(key: key);
 
@@ -314,13 +317,8 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
     );
   }
   
-  // 오디오 파일 선택 및 업로드
+  // 간단한 업로드 함수
   Future<void> _selectAndUploadAudioFile() async {
-    // 파일 선택 및 업로드 구현
-    // 이 부분은 이미 파일 업로드 기능이 있다고 가정하고 생략
-    // (file_picker 패키지 사용 권장)
-    
-    // 업로드 성공 후
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('파일이 업로드되었습니다.'),
@@ -328,7 +326,6 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       ),
     );
     
-    // 알람 화면으로 돌아가기
     if (mounted) {
       Navigator.of(context).pop();
     }
