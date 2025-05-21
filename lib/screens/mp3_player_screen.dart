@@ -25,6 +25,10 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
   UserFile? _currentFile;
   bool _isInitializing = true;
   String? _errorMessage;
+  bool _isDownloading = false; // 다운로드 중 상태 추가
+  
+  // 다운로드된 파일 경로를 캐시
+  final Map<int, String> _downloadedFilePaths = {};
   
   @override
   void initState() {
@@ -64,110 +68,148 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
     _audioPlayerService.dispose();
     super.dispose();
   }
-// MP3 파일 다운로드 후 재생 메서드
-Future<void> _playMp3(UserFile file) async {
-  try {
-    setState(() {
-      _currentFile = file;
-      _errorMessage = null;
-    });
-    
-    // 로딩 상태 표시
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${file.fileName} 다운로드 중...')),
-    );
-    
-    // 토큰 가져오기
-    final tokenService = await SharedPreferences.getInstance();
-    final token = tokenService.getString('auth_token');
-    
-    if (token == null) {
-      throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
+  
+  // MP3 파일 다운로드 후 재생 메서드
+  Future<void> _playMp3(UserFile file) async {
+    // 이미 다운로드 중이면 중복 실행 방지
+    if (_isDownloading) {
+      return;
     }
     
-    // 다운로드 URL 생성
-    final url = 'https://port-0-java-springboot-lan-m8dt2pjh3adde56e.sel4.cloudtype.app/api/files/download/${file.id}?token=$token';
-    
-    debugPrint('다운로드 URL: $url');
-    
-    // HTTP 요청으로 파일 다운로드
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-    
-    debugPrint('HTTP 응답 코드: ${response.statusCode}');
-    
-    if (response.statusCode != 200) {
-      throw Exception('파일 다운로드 실패. 상태 코드: ${response.statusCode}');
-    }
-    
-    // 응답 크기 확인
-    debugPrint('다운로드 파일 크기: ${response.bodyBytes.length} 바이트');
-    
-    if (response.bodyBytes.isEmpty) {
-      throw Exception('다운로드된 파일이 비어있습니다.');
-    }
-    
-    // 임시 디렉토리에 파일 저장
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/${file.fileName}');
-    await tempFile.writeAsBytes(response.bodyBytes);
-    
-    debugPrint('임시 파일 저장 경로: ${tempFile.path}');
-    
-    // 다운로드 완료 알림
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${file.fileName} 다운로드 완료, 재생 시작')),
-    );
-    
-    // 로컬 파일에서 재생
-    await _audioPlayerService.audioPlayer.setFilePath(tempFile.path);
-    await _audioPlayerService.audioPlayer.play();
-  } catch (e) {
-    if (mounted) {
+    try {
       setState(() {
-        _errorMessage = '파일 재생 오류: $e';
-        debugPrint(_errorMessage);
+        _currentFile = file;
+        _errorMessage = null;
+        _isDownloading = true; // 다운로드 시작
       });
       
+      // 이미 다운로드된 파일이 있는지 확인
+      if (_downloadedFilePaths.containsKey(file.id)) {
+        final cachedFilePath = _downloadedFilePaths[file.id];
+        final cachedFile = File(cachedFilePath!);
+        
+        // 파일이 실제로 존재하는지 확인
+        if (await cachedFile.exists()) {
+          debugPrint('캐시된 파일 사용: $cachedFilePath');
+          
+          // 로컬 파일에서 바로 재생
+          await _audioPlayerService.audioPlayer.setFilePath(cachedFilePath);
+          await _audioPlayerService.audioPlayer.play();
+          
+          setState(() {
+            _isDownloading = false;
+          });
+          return;
+        }
+      }
+      
+      // 로딩 상태 표시
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('파일 재생 중 오류가 발생했습니다: $e')),
+        SnackBar(content: Text('${file.fileName} 다운로드 중...')),
       );
+      
+      // 토큰 가져오기
+      final tokenService = await SharedPreferences.getInstance();
+      final token = tokenService.getString('auth_token');
+      
+      if (token == null) {
+        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
+      }
+      
+      // 다운로드 URL 생성
+      final url = 'https://port-0-java-springboot-lan-m8dt2pjh3adde56e.sel4.cloudtype.app/api/files/download/${file.id}?token=$token';
+      
+      debugPrint('다운로드 URL: $url');
+      
+      // HTTP 요청으로 파일 다운로드
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+      
+      debugPrint('HTTP 응답 코드: ${response.statusCode}');
+      
+      if (response.statusCode != 200) {
+        throw Exception('파일 다운로드 실패. 상태 코드: ${response.statusCode}');
+      }
+      
+      // 응답 크기 확인
+      debugPrint('다운로드 파일 크기: ${response.bodyBytes.length} 바이트');
+      
+      if (response.bodyBytes.isEmpty) {
+        throw Exception('다운로드된 파일이 비어있습니다.');
+      }
+      
+      // 임시 디렉토리에 파일 저장
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/${file.fileName}');
+      await tempFile.writeAsBytes(response.bodyBytes);
+      
+      final filePath = tempFile.path;
+      debugPrint('임시 파일 저장 경로: $filePath');
+      
+      // 파일 경로 캐시
+      _downloadedFilePaths[file.id] = filePath;
+      
+      // 다운로드 완료 알림
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${file.fileName} 다운로드 완료, 재생 시작')),
+      );
+      
+      // 로컬 파일에서 재생
+      await _audioPlayerService.audioPlayer.setFilePath(filePath);
+      await _audioPlayerService.audioPlayer.play();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = '파일 재생 오류: $e';
+          debugPrint(_errorMessage);
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('파일 재생 중 오류가 발생했습니다: $e')),
+        );
+      }
+    } finally {
+      // 작업 완료 후 다운로드 상태 해제
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
     }
   }
-}
   
- // 토큰을 포함한 URL 생성 메서드 수정
-Future<Uri> _getTokenUrl(String baseUrl) async {
-  try {
-    // 스토리지에서 토큰 가져오기
-    final tokenService = await SharedPreferences.getInstance();
-    final token = tokenService.getString('auth_token');
-    
-    if (token == null) {
-      throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
+  // 토큰을 포함한 URL 생성 메서드 수정
+  Future<Uri> _getTokenUrl(String baseUrl) async {
+    try {
+      // 스토리지에서 토큰 가져오기
+      final tokenService = await SharedPreferences.getInstance();
+      final token = tokenService.getString('auth_token');
+      
+      if (token == null) {
+        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
+      }
+      
+      // URL에 토큰 파라미터 추가
+      final uri = Uri.parse(baseUrl);
+      final newUri = uri.replace(
+        queryParameters: {
+          ...uri.queryParameters,
+          'token': token,
+        },
+      );
+      
+      debugPrint('생성된 URL: $newUri');
+      return newUri;
+    } catch (e) {
+      debugPrint('토큰 URL 생성 오류: $e');
+      throw Exception('토큰 URL 생성 실패: $e');
     }
-    
-    // URL에 토큰 파라미터 추가
-    final uri = Uri.parse(baseUrl);
-    final newUri = uri.replace(
-      queryParameters: {
-        ...uri.queryParameters,
-        'token': token,
-      },
-    );
-    
-    debugPrint('생성된 URL: $newUri');
-    return newUri;
-  } catch (e) {
-    debugPrint('토큰 URL 생성 오류: $e');
-    throw Exception('토큰 URL 생성 실패: $e');
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -411,7 +453,7 @@ Future<Uri> _getTokenUrl(String baseUrl) async {
     );
   }
   
-  // 오디오 파일 항목 위젯
+  // 오디오 파일 항목 위젯 - 재생 버튼 제거
   Widget _buildAudioFileItem(UserFile file, bool isPlaying) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -431,26 +473,15 @@ Future<Uri> _getTokenUrl(String baseUrl) async {
           '생성일: ${_formatDate(file.createdAt)}',
           style: AppTheme.bodySmall,
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 재생 버튼
-            IconButton(
-              icon: Icon(
-                isPlaying ? Icons.pause : Icons.play_arrow,
-                color: isPlaying ? AppTheme.primaryColor : null,
-              ),
-              onPressed: () {
-                if (isPlaying) {
-                  _audioPlayerService.playOrPause();
-                } else {
-                  _playMp3(file);
-                }
-              },
-            ),
-          ],
-        ),
+        // 재생 버튼 제거, 아래쪽에 있던 재생 버튼 삭제
+        trailing: isPlaying 
+            ? const Icon(Icons.equalizer, color: AppTheme.primaryColor)
+            : null,
         onTap: () {
+          // 이미 재생 중이거나 다운로드 중이면 중복 실행 방지
+          if (isPlaying || _isDownloading) {
+            return;
+          }
           _playMp3(file);
         },
       ),
