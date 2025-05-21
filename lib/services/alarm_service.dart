@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:just_audio/just_audio.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,7 +15,7 @@ class AlarmService {
   static final AlarmService _instance = AlarmService._internal();
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
-
+  final AudioPlayer _audioPlayer = AudioPlayer();
   // 싱글톤 패턴
   factory AlarmService() => _instance;
   
@@ -51,10 +52,17 @@ class AlarmService {
   }
 
   // 알림 응답 처리 콜백
-  void onDidReceiveNotificationResponse(NotificationResponse response) {
-    debugPrint('알림 응답: ${response.payload}');
-    // 실제 앱에서는 여기서 알림 탭 시 처리를 구현
+void onDidReceiveNotificationResponse(NotificationResponse response) {
+  debugPrint('알림 응답: ${response.payload}');
+  
+  // 알람음 재생
+  if (response.payload != null && response.payload!.isNotEmpty) {
+    playAlarmSound(response.payload!);
+  } else {
+    // 기본 알람음 재생
+    playAlarmSound('assets/default_alarm.mp3');
   }
+}
 
   // 알람 저장
   Future<void> saveAlarms(List<Alarm> alarms) async {
@@ -198,11 +206,39 @@ Future<void> cancelAlarm(Alarm alarm) async {
     await flutterLocalNotificationsPlugin.cancelAll();
   }
 
-  // 알람음 재생 (실제로는 just_audio 등의 패키지를 사용)
-  Future<void> playAlarmSound(String soundPath) async {
-    // 이 부분은 just_audio 등의 패키지를 사용하여 구현
-    debugPrint('알람음 재생: $soundPath');
+// playAlarmSound 메서드 수정
+Future<void> playAlarmSound(String soundPath) async {
+  try {
+    debugPrint('알람음 재생 시도: $soundPath');
+    
+    // 기본 알람음 경로 설정
+    String audioPath = 'asset:///assets/default_alarm.mp3';
+    
+    // 사용자 지정 알람음이 있는 경우
+    if (soundPath.isNotEmpty && soundPath != 'assets/default_alarm.mp3') {
+      audioPath = soundPath;
+    }
+    
+    // 이전 재생 중지
+    await _audioPlayer.stop();
+    
+    // 알람음 로드 및 재생
+    await _audioPlayer.setUrl(audioPath);
+    await _audioPlayer.play();
+    
+    debugPrint('알람음 재생 성공: $audioPath');
+  } catch (e) {
+    debugPrint('알람음 재생 오류: $e');
+    
+    // 오류 발생 시 기본 알람음으로 폴백
+    try {
+      await _audioPlayer.setAsset('assets/default_alarm.mp3');
+      await _audioPlayer.play();
+    } catch (fallbackError) {
+      debugPrint('기본 알람음 재생 오류: $fallbackError');
+    }
   }
+}
 
   // 다음 알람 시간 계산
   DateTime? _calculateNextAlarmTime(Alarm alarm) {

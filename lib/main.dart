@@ -5,6 +5,7 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:audio_service/audio_service.dart';
 import 'config/theme.dart';
 import './providers/auth_provider.dart';
 import './providers/quiz_provider.dart';
@@ -27,7 +28,11 @@ import './screens/quiz/quiz_take_screen.dart';
 import './screens/alarm/alarm_list_screen.dart';
 import './screens/alarm/alarm_edit_screen.dart';
 import './screens/alarm/mp3_selector_screen.dart';
+import './screens/mp3_player_screen.dart';
 import './services/alarm_service.dart';
+import './services/audio_background_handler.dart';
+
+late AudioHandler audioHandler;
 
 Future<void> main() async {
   // Flutter 바인딩 초기화
@@ -36,6 +41,9 @@ Future<void> main() async {
   // 타임존 초기화
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+  
+  // 오디오 서비스 초기화
+  audioHandler = await initAudioService();
   
   // 알람 관련 초기화
   await AndroidAlarmManager.initialize();
@@ -114,6 +122,7 @@ class MyApp extends StatelessWidget {
           '/alarms/edit': (context) => const AlarmEditScreen(),
           '/alarms/sound': (context) => const MP3SelectorScreen(),
           '/files/upload': (context) => const FileUploadScreen(),
+          '/mp3-player': (context) => const MP3PlayerScreen(),
         },
       ),
     );

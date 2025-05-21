@@ -233,6 +233,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 8),
                         _buildActionButton(
+                          Icons.music_note,
+                          'MP3 플레이어',
+                          () {
+                            Navigator.pushNamed(context, '/mp3-player');
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        _buildActionButton(
                           Icons.logout,
                           '로그아웃',
                           _handleLogout,
