@@ -1,17 +1,18 @@
 // lib/screens/mp3_player_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
-import '../config/theme.dart';
-import '../models/user_file.dart';
-import '../providers/file_provider.dart';
-import '../services/audio_player_service.dart';
-import '../utils/browser_downloader.dart';
-import 'package:http/http.dart' as http;
+import 'package:audio_service/audio_service.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:audio_session/audio_session.dart';
+import 'package:http/http.dart' as http;
+import '../config/theme.dart';
+import '../models/user_file.dart';
+import '../providers/file_provider.dart';
+import '../services/audio_background_handler.dart';
+import '../main.dart'; // audioHandler 전역 변수에 접근하기 위해 추가
 
 class MP3PlayerScreen extends StatefulWidget {
   const MP3PlayerScreen({Key? key}) : super(key: key);
@@ -21,24 +22,26 @@ class MP3PlayerScreen extends StatefulWidget {
 }
 
 class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
-  final AudioPlayerService _audioPlayerService = AudioPlayerService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   UserFile? _currentFile;
   bool _isInitializing = true;
   String? _errorMessage;
-  bool _isDownloading = false; // 다운로드 중 상태 추가
-  
-  // 다운로드된 파일 경로를 캐시
+  bool _isDownloading = false;
   final Map<int, String> _downloadedFilePaths = {};
+  bool _showMiniPlayer = false;
+  
+  // 전역 변수 audioHandler 사용 (AudioService.audioHandler 대신)
+  late AudioHandler _audioHandler;
   
   @override
   void initState() {
     super.initState();
+    _audioHandler = audioHandler; // main.dart에서 export된 전역 변수 사용
     _initializePlayer();
   }
   
   Future<void> _initializePlayer() async {
     try {
-      await _audioPlayerService.init();
       if (mounted) {
         setState(() {
           _isInitializing = false;
@@ -48,6 +51,15 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
         Future.microtask(() {
           if (mounted) {
             Provider.of<FileProvider>(context, listen: false).fetchAudioFiles();
+          }
+        });
+        
+        // 현재 재생 중인 미디어 아이템 확인
+        _audioHandler.mediaItem.listen((mediaItem) {
+          if (mediaItem != null && mounted) {
+            setState(() {
+              _showMiniPlayer = true;
+            });
           }
         });
       }
@@ -64,8 +76,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
   
   @override
   void dispose() {
-    // 리소스 정리
-    _audioPlayerService.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
   
@@ -80,7 +91,8 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
       setState(() {
         _currentFile = file;
         _errorMessage = null;
-        _isDownloading = true; // 다운로드 시작
+        _isDownloading = true;
+        _showMiniPlayer = true;
       });
       
       // 이미 다운로드된 파일이 있는지 확인
@@ -92,9 +104,12 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
         if (await cachedFile.exists()) {
           debugPrint('캐시된 파일 사용: $cachedFilePath');
           
-          // 로컬 파일에서 바로 재생
-          await _audioPlayerService.audioPlayer.setFilePath(cachedFilePath);
-          await _audioPlayerService.audioPlayer.play();
+          // 오디오 서비스로 재생
+          await (_audioHandler as AudioPlayerHandler).playFile(
+            cachedFilePath, 
+            file.fileName, 
+            'LinguaEdge MP3'
+          );
           
           setState(() {
             _isDownloading = false;
@@ -159,9 +174,13 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
         SnackBar(content: Text('${file.fileName} 다운로드 완료, 재생 시작')),
       );
       
-      // 로컬 파일에서 재생
-      await _audioPlayerService.audioPlayer.setFilePath(filePath);
-      await _audioPlayerService.audioPlayer.play();
+      // 오디오 서비스로 재생
+      await (_audioHandler as AudioPlayerHandler).playFile(
+        filePath, 
+        file.fileName, 
+        'LinguaEdge MP3'
+      );
+      
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -182,38 +201,10 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
       }
     }
   }
-  
-  // 토큰을 포함한 URL 생성 메서드 수정
-  Future<Uri> _getTokenUrl(String baseUrl) async {
-    try {
-      // 스토리지에서 토큰 가져오기
-      final tokenService = await SharedPreferences.getInstance();
-      final token = tokenService.getString('auth_token');
-      
-      if (token == null) {
-        throw Exception('인증 토큰이 없습니다. 다시 로그인해주세요.');
-      }
-      
-      // URL에 토큰 파라미터 추가
-      final uri = Uri.parse(baseUrl);
-      final newUri = uri.replace(
-        queryParameters: {
-          ...uri.queryParameters,
-          'token': token,
-        },
-      );
-      
-      debugPrint('생성된 URL: $newUri');
-      return newUri;
-    } catch (e) {
-      debugPrint('토큰 URL 생성 오류: $e');
-      throw Exception('토큰 URL 생성 실패: $e');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    // 초기화 중이거나 오류 발생 시 처리
+    // 이하 코드는 동일...
     if (_isInitializing) {
       return Scaffold(
         backgroundColor: AppTheme.backgroundColor,
@@ -231,220 +222,307 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
       );
     }
     
-    // 오류 발생 시 표시
-    if (_errorMessage != null) {
-      return Scaffold(
-        backgroundColor: AppTheme.backgroundColor,
-        appBar: AppBar(title: const Text('MP3 플레이어')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(_errorMessage!, textAlign: TextAlign.center),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _isInitializing = true;
-                    _errorMessage = null;
-                  });
-                  _initializePlayer();
-                },
-                child: const Text('다시 시도'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // 정상 화면 표시
+    // 나머지 build 메서드 코드...
+    
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         title: const Text('MP3 플레이어'),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // 현재 재생 중인 파일 정보
-          _buildNowPlaying(),
-          
-          // 파일 목록
-          Expanded(
-            child: Consumer<FileProvider>(
-              builder: (context, fileProvider, child) {
-                if (fileProvider.isLoading) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-                
-                // 오류 발생 시 표시
-                if (fileProvider.error != null) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                        const SizedBox(height: 16),
-                        Text('파일 목록 오류: ${fileProvider.error}', textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => fileProvider.fetchAudioFiles(),
-                          child: const Text('다시 시도'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                
-                final audioFiles = fileProvider.audioFiles;
-                
-                if (audioFiles.isEmpty) {
-                  return _buildEmptyState();
-                }
-                
-                return ListView.builder(
-                  itemCount: audioFiles.length,
-                  itemBuilder: (context, index) {
-                    final file = audioFiles[index];
-                    final isPlaying = _currentFile?.id == file.id;
+          Column(
+            children: [
+              // 파일 목록
+              Expanded(
+                child: Consumer<FileProvider>(
+                  builder: (context, fileProvider, child) {
+                    if (fileProvider.isLoading) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
                     
-                    return _buildAudioFileItem(file, isPlaying);
+                    // 오류 발생 시 표시
+                    if (fileProvider.error != null) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                            const SizedBox(height: 16),
+                            Text('파일 목록 오류: ${fileProvider.error}', textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () => fileProvider.fetchAudioFiles(),
+                              child: const Text('다시 시도'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    
+                    final audioFiles = fileProvider.audioFiles;
+                    
+                    if (audioFiles.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.audio_file,
+                              size: 80,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'MP3 파일이 없습니다',
+                              style: AppTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '파일 업로드 화면에서 MP3 파일을 업로드해주세요.',
+                              style: AppTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.upload_file),
+                              label: const Text('파일 업로드'),
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/files/upload');
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    
+                    // 미니 플레이어 공간 확보를 위한 padding 추가
+                    return ListView.builder(
+                      itemCount: audioFiles.length,
+                      padding: EdgeInsets.only(bottom: _showMiniPlayer ? 80 : 0),
+                      itemBuilder: (context, index) {
+                        final file = audioFiles[index];
+                        
+                        // 현재 재생 중인 파일 확인 (스트림 사용)
+                        return StreamBuilder<MediaItem?>(
+                          stream: _audioHandler.mediaItem,
+                          builder: (context, snapshot) {
+                            final currentMediaItem = snapshot.data;
+                            final isPlaying = currentMediaItem != null && 
+                                file.fileName == currentMediaItem.title;
+                            
+                            return Card(
+                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: ListTile(
+                                leading: Icon(
+                                  Icons.audio_file,
+                                  color: isPlaying ? AppTheme.primaryColor : Colors.grey,
+                                ),
+                                title: Text(
+                                  file.fileName,
+                                  style: TextStyle(
+                                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                                    color: isPlaying ? AppTheme.primaryColor : null,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '생성일: ${_formatDate(file.createdAt)}',
+                                  style: AppTheme.bodySmall,
+                                ),
+                                trailing: isPlaying 
+                                    ? const Icon(Icons.equalizer, color: AppTheme.primaryColor)
+                                    : null,
+                                onTap: () {
+                                  // 이미 재생 중이거나 다운로드 중이면 중복 실행 방지
+                                  if (isPlaying || _isDownloading) {
+                                    return;
+                                  }
+                                  _playMp3(file);
+                                },
+                              ),
+                            );
+                          }
+                        );
+                      },
+                    );
                   },
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           ),
+          
+          // 미니 플레이어
+          if (_showMiniPlayer)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildMiniPlayer(),
+            ),
         ],
       ),
     );
   }
   
-  // 현재 재생 중인 파일 UI - 에러 처리 추가
-  Widget _buildNowPlaying() {
-    return StreamBuilder<Duration>(
-      stream: _audioPlayerService.audioPlayer.positionStream,
-      builder: (context, snapshot) {
-        // 스트림 데이터 누락 시
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: Colors.red.withOpacity(0.1),
-            child: Text('재생 정보 오류: ${snapshot.error}'),
-          );
-        }
+  // 미니 플레이어 위젯
+  Widget _buildMiniPlayer() {
+    return StreamBuilder<MediaItem?>(
+      stream: _audioHandler.mediaItem,
+      builder: (context, mediaItemSnapshot) {
+        final mediaItem = mediaItemSnapshot.data;
         
-        final position = snapshot.data ?? Duration.zero;
-        final duration = _audioPlayerService.audioPlayer.duration ?? Duration.zero;
-        double progressValue = 0.0;
-        
-        // 안전하게 진행 값 계산
-        if (duration.inMilliseconds > 0) {
-          progressValue = position.inMilliseconds / duration.inMilliseconds;
-          // 값이 범위를 벗어나지 않도록 조정
-          if (progressValue < 0) progressValue = 0;
-          if (progressValue > 1) progressValue = 1;
+        // 재생 중인 미디어가 없으면 표시하지 않음
+        if (mediaItem == null) {
+          return const SizedBox.shrink();
         }
         
         return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: Colors.black.withOpacity(0.8),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+            ),
           ),
-          child: Column(
+          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+          child: Row(
             children: [
-              // 재생 중인 파일 이름
-              Text(
-                _currentFile?.fileName ?? '재생 중인 파일 없음',
-                style: AppTheme.titleMedium,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              // 앨범 아트 (없으면 아이콘)
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.music_note, color: Colors.white),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(width: 12),
               
-              // 진행 바
-              LinearProgressIndicator(
-                value: progressValue,
-                backgroundColor: Colors.grey[300],
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+              // 노래 정보
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      mediaItem.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    
+                    // 재생 진행 표시줄
+                    StreamBuilder<Duration>(
+                      stream: _audioPlayer.positionStream,
+                      builder: (context, snapshot) {
+                        final position = snapshot.data ?? Duration.zero;
+                        final duration = mediaItem.duration ?? Duration.zero;
+                        
+                        double progressValue = 0.0;
+                        if (duration.inMilliseconds > 0) {
+                          progressValue = position.inMilliseconds / duration.inMilliseconds;
+                          if (progressValue < 0) progressValue = 0;
+                          if (progressValue > 1) progressValue = 1;
+                        }
+                        
+                        return Row(
+                          children: [
+                            Text(
+                              _formatDuration(position),
+                              style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                            ),
+                            Expanded(
+                              child: SliderTheme(
+                                data: SliderThemeData(
+                                  trackHeight: 2,
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                                ),
+                                child: Slider(
+                                  value: progressValue,
+                                  onChanged: (value) {
+                                    if (duration.inMilliseconds > 0) {
+                                      final newPosition = Duration(
+                                        milliseconds: (value * duration.inMilliseconds).round()
+                                      );
+                                      _audioHandler.seek(newPosition);
+                                    }
+                                  },
+                                  activeColor: Colors.white,
+                                  inactiveColor: Colors.grey[600],
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _formatDuration(duration),
+                              style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              
-              // 시간 표시
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_formatDuration(position)),
-                  Text(_formatDuration(duration)),
-                ],
-              ),
-              const SizedBox(height: 8),
               
               // 컨트롤 버튼
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.replay_10),
+              IconButton(
+                icon: const Icon(Icons.skip_previous, color: Colors.white),
+                onPressed: () {
+                  try {
+                    // 처음으로 되감기
+                    _audioHandler.seek(Duration.zero);
+                  } catch (e) {
+                    debugPrint('되감기 오류: $e');
+                  }
+                },
+                iconSize: 28,
+              ),
+              
+              StreamBuilder<PlaybackState>(
+                stream: _audioHandler.playbackState,
+                builder: (context, snapshot) {
+                  final playbackState = snapshot.data;
+                  final playing = playbackState?.playing ?? false;
+                  return IconButton(
+                    icon: Icon(
+                      playing ? Icons.pause : Icons.play_arrow,
+                      color: Colors.white,
+                    ),
                     onPressed: () {
                       try {
-                        final newPosition = position - const Duration(seconds: 10);
-                        _audioPlayerService.audioPlayer.seek(newPosition);
+                        if (playing) {
+                          _audioHandler.pause();
+                        } else {
+                          _audioHandler.play();
+                        }
                       } catch (e) {
-                        debugPrint('되감기 오류: $e');
+                        debugPrint('재생/일시정지 오류: $e');
                       }
                     },
-                  ),
-                  const SizedBox(width: 16),
-                  StreamBuilder<bool>(
-                    stream: _audioPlayerService.audioPlayer.playingStream,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data ?? false;
-                      return IconButton(
-                        icon: Icon(
-                          isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                          size: 48,
-                        ),
-                        color: AppTheme.primaryColor,
-                        onPressed: () {
-                          try {
-                            _audioPlayerService.playOrPause();
-                          } catch (e) {
-                            debugPrint('재생/일시정지 오류: $e');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('재생 제어 오류: $e')),
-                            );
-                          }
-                        },
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 16),
-                  IconButton(
-                    icon: const Icon(Icons.forward_10),
-                    onPressed: () {
-                      try {
-                        final newPosition = position + const Duration(seconds: 10);
-                        _audioPlayerService.audioPlayer.seek(newPosition);
-                      } catch (e) {
-                        debugPrint('빨리감기 오류: $e');
-                      }
-                    },
-                  ),
-                ],
+                    iconSize: 32,
+                  );
+                },
+              ),
+              
+              IconButton(
+                icon: const Icon(Icons.skip_next, color: Colors.white),
+                onPressed: () {
+                  try {
+                    // 다음 곡 기능 (필요하면 구현)
+                    // 현재는 기능이 없음
+                  } catch (e) {
+                    debugPrint('다음 곡 오류: $e');
+                  }
+                },
+                iconSize: 28,
               ),
             ],
           ),
@@ -453,97 +531,14 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
     );
   }
   
-  // 오디오 파일 항목 위젯 - 재생 버튼 제거
-  Widget _buildAudioFileItem(UserFile file, bool isPlaying) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        leading: Icon(
-          Icons.audio_file,
-          color: isPlaying ? AppTheme.primaryColor : Colors.grey,
-        ),
-        title: Text(
-          file.fileName,
-          style: TextStyle(
-            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-            color: isPlaying ? AppTheme.primaryColor : null,
-          ),
-        ),
-        subtitle: Text(
-          '생성일: ${_formatDate(file.createdAt)}',
-          style: AppTheme.bodySmall,
-        ),
-        // 재생 버튼 제거, 아래쪽에 있던 재생 버튼 삭제
-        trailing: isPlaying 
-            ? const Icon(Icons.equalizer, color: AppTheme.primaryColor)
-            : null,
-        onTap: () {
-          // 이미 재생 중이거나 다운로드 중이면 중복 실행 방지
-          if (isPlaying || _isDownloading) {
-            return;
-          }
-          _playMp3(file);
-        },
-      ),
-    );
-  }
-  
-  // 빈 상태 위젯
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.audio_file,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'MP3 파일이 없습니다',
-            style: AppTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '파일 업로드 화면에서 MP3 파일을 업로드해주세요.',
-            style: AppTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.upload_file),
-            label: const Text('파일 업로드'),
-            onPressed: () {
-              Navigator.pushNamed(context, '/files/upload');
-            },
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 시간 형식 변환 (00:00 형식)
   String _formatDuration(Duration duration) {
-    try {
-      String twoDigits(int n) => n.toString().padLeft(2, '0');
-      final minutes = twoDigits(duration.inMinutes.remainder(60));
-      final seconds = twoDigits(duration.inSeconds.remainder(60));
-      return '$minutes:$seconds';
-    } catch (e) {
-      debugPrint('시간 형식 변환 오류: $e');
-      return '00:00';
-    }
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
   
-  // 날짜 형식 변환
   String _formatDate(DateTime date) {
-    try {
-      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    } catch (e) {
-      debugPrint('날짜 형식 변환 오류: $e');
-      return '날짜 정보 없음';
-    }
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 }
