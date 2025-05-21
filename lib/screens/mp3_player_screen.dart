@@ -10,7 +10,6 @@ import 'package:http/http.dart' as http;
 import '../config/theme.dart';
 import '../models/user_file.dart';
 import '../providers/file_provider.dart';
-import '../services/audio_background_handler.dart';
 import '../main.dart'; // audioHandler 전역 변수 접근
 
 class MP3PlayerScreen extends StatefulWidget {
@@ -21,7 +20,6 @@ class MP3PlayerScreen extends StatefulWidget {
 }
 
 class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
-  // 별도의 AudioPlayer 인스턴스 제거 - 오직 AudioHandler만 사용
   UserFile? _currentFile;
   bool _isInitializing = true;
   String? _errorMessage;
@@ -75,7 +73,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
   
   @override
   void dispose() {
-    // AudioPlayer 인스턴스 없으므로 dispose 필요 없음
+    // 화면 종료 시 AudioHandler는 dispose하지 않음 (전역 변수로 관리됨)
     super.dispose();
   }
   
@@ -104,7 +102,8 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
           debugPrint('캐시된 파일 사용: $cachedFilePath');
           
           // 오디오 서비스로 재생
-          await (_audioHandler as AudioPlayerHandler).playFile(
+          await _audioHandler.customAction('stopCurrent');
+          await (_audioHandler as dynamic).playFile(
             cachedFilePath, 
             file.fileName, 
             'LinguaEdge MP3'
@@ -174,7 +173,8 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
       );
       
       // 오디오 서비스로 재생
-      await (_audioHandler as AudioPlayerHandler).playFile(
+      await _audioHandler.customAction('stopCurrent');
+      await (_audioHandler as dynamic).playFile(
         filePath, 
         file.fileName, 
         'LinguaEdge MP3'
@@ -326,7 +326,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
                     // 미니 플레이어 공간 확보를 위한 padding 추가
                     return ListView.builder(
                       itemCount: audioFiles.length,
-                      padding: EdgeInsets.only(bottom: _showMiniPlayer ? 80 : 0),
+                      padding: EdgeInsets.only(bottom: _showMiniPlayer ? 120 : 0),
                       itemBuilder: (context, index) {
                         final file = audioFiles[index];
                         
@@ -405,149 +405,141 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
         
         return Container(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.8),
+            color: Colors.black.withOpacity(0.85),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(12),
               topRight: Radius.circular(12),
             ),
           ),
           padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // 앨범 아트 (없으면 아이콘)
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  borderRadius: BorderRadius.circular(4),
+              // 노래 제목 (굵은 글씨, 흰색)
+              Text(
+                mediaItem.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
                 ),
-                child: const Icon(Icons.music_note, color: Colors.white),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(height: 8),
               
-              // 노래 정보
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      mediaItem.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    
-                    // 재생 진행 표시줄 - 수정된 부분 (PlaybackState 사용)
-                    StreamBuilder<PlaybackState>(
-                      stream: _audioHandler.playbackState,
-                      builder: (context, snapshot) {
-                        final playbackState = snapshot.data;
-                        final position = playbackState?.position ?? Duration.zero;
-                        final duration = mediaItem.duration ?? Duration.zero;
-                        
-                        double progressValue = 0.0;
-                        if (duration.inMilliseconds > 0) {
-                          progressValue = position.inMilliseconds / duration.inMilliseconds;
-                          if (progressValue < 0) progressValue = 0;
-                          if (progressValue > 1) progressValue = 1;
-                        }
-                        
-                        return Row(
-                          children: [
-                            Text(
-                              _formatDuration(position),
-                              style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                            ),
-                            Expanded(
-                              child: SliderTheme(
-                                data: SliderThemeData(
-                                  trackHeight: 2,
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                                ),
-                                child: Slider(
-                                  value: progressValue,
-                                  onChanged: (value) {
-                                    if (duration.inMilliseconds > 0) {
-                                      final newPosition = Duration(
-                                        milliseconds: (value * duration.inMilliseconds).round()
-                                      );
-                                      _audioHandler.seek(newPosition);
-                                    }
-                                  },
-                                  activeColor: Colors.white,
-                                  inactiveColor: Colors.grey[600],
-                                ),
-                              ),
-                            ),
-                            Text(
-                              _formatDuration(duration),
-                              style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              // 컨트롤 버튼
-              IconButton(
-                icon: const Icon(Icons.skip_previous, color: Colors.white),
-                onPressed: () {
-                  try {
-                    // 처음으로 되감기
-                    _audioHandler.seek(Duration.zero);
-                  } catch (e) {
-                    debugPrint('되감기 오류: $e');
-                  }
-                },
-                iconSize: 28,
-              ),
-              
+              // 진행 시간 표시줄 (첫 번째 이미지 스타일)
               StreamBuilder<PlaybackState>(
                 stream: _audioHandler.playbackState,
                 builder: (context, snapshot) {
                   final playbackState = snapshot.data;
-                  final playing = playbackState?.playing ?? false;
-                  return IconButton(
-                    icon: Icon(
-                      playing ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                    ),
-                    onPressed: () {
-                      try {
-                        if (playing) {
-                          _audioHandler.pause();
-                        } else {
-                          _audioHandler.play();
-                        }
-                      } catch (e) {
-                        debugPrint('재생/일시정지 오류: $e');
-                      }
-                    },
-                    iconSize: 32,
+                  final position = playbackState?.position ?? Duration.zero;
+                  final duration = mediaItem.duration ?? Duration.zero;
+                  
+                  // 위치 표시 로직
+                  double progressValue = 0.0;
+                  if (duration.inMilliseconds > 0) {
+                    progressValue = position.inMilliseconds / duration.inMilliseconds;
+                    if (progressValue < 0) progressValue = 0;
+                    if (progressValue > 1) progressValue = 1;
+                  }
+                  
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 현재 시간 (00:07)
+                      Text(
+                        _formatDuration(position),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      
+                      // 시크바
+                      Expanded(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 12),
+                          child: SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 2,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                              activeTrackColor: Colors.white,
+                              inactiveTrackColor: Colors.grey.withOpacity(0.3),
+                              thumbColor: Colors.white,
+                              overlayColor: Colors.white.withOpacity(0.3),
+                            ),
+                            child: Slider(
+                              value: progressValue,
+                              onChanged: (value) {
+                                if (duration.inMilliseconds > 0) {
+                                  final newPosition = Duration(
+                                    milliseconds: (value * duration.inMilliseconds).round()
+                                  );
+                                  _audioHandler.seek(newPosition);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // 총 시간 (00:36)
+                      Text(
+                        _formatDuration(duration),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
                   );
                 },
               ),
               
-              IconButton(
-                icon: const Icon(Icons.skip_next, color: Colors.white),
-                onPressed: () {
-                  try {
-                    // 다음 곡 기능 (필요하면 구현)
-                    // 현재는 기능이 없음
-                  } catch (e) {
-                    debugPrint('다음 곡 오류: $e');
-                  }
-                },
-                iconSize: 28,
+              // 컨트롤 버튼들
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // 이전 버튼
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous, color: Colors.white),
+                    onPressed: () {
+                      // 기본 제공되는 rewind 메서드 호출 (10초 뒤로)
+                      _audioHandler.rewind();
+                    },
+                    iconSize: 28,
+                  ),
+                  
+                  // 재생/일시정지 버튼
+                  StreamBuilder<PlaybackState>(
+                    stream: _audioHandler.playbackState,
+                    builder: (context, snapshot) {
+                      final playbackState = snapshot.data;
+                      final playing = playbackState?.playing ?? false;
+                      
+                      return IconButton(
+                        icon: Icon(
+                          playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                          color: Colors.white,
+                        ),
+                        onPressed: () {
+                          if (playing) {
+                            _audioHandler.pause();
+                          } else {
+                            _audioHandler.play();
+                          }
+                        },
+                        iconSize: 40,
+                      );
+                    },
+                  ),
+                  
+                  // 다음 버튼
+                  IconButton(
+                    icon: const Icon(Icons.skip_next, color: Colors.white),
+                    onPressed: () {
+                      // 기본 제공되는 fastForward 메서드 호출 (10초 앞으로)
+                      _audioHandler.fastForward();
+                    },
+                    iconSize: 28,
+                  ),
+                ],
               ),
             ],
           ),
@@ -556,6 +548,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
     );
   }
   
+  // 시간 형식화 함수
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
@@ -563,6 +556,7 @@ class _MP3PlayerScreenState extends State<MP3PlayerScreen> {
     return '$minutes:$seconds';
   }
   
+  // 날짜 형식화 함수
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
