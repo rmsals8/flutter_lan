@@ -1,5 +1,5 @@
 // lib/main.dart
-
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:audio_service/audio_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'config/theme.dart';
 import './providers/auth_provider.dart';
 import './providers/quiz_provider.dart';
@@ -33,49 +34,151 @@ import './screens/alarm/mp3_selector_screen.dart';
 import './screens/mp3_player_screen.dart';
 import './services/alarm_service.dart';
 import './services/audio_background_handler.dart';
+import 'package:lingedge1/services/alarm_receiver.dart'; // 추가r
 
 // 전역 변수로 AudioHandler 선언
 late AudioHandler audioHandler;
 
+// lib/main.dart의 main 함수 수정
+
+@pragma('vm:entry-point')
+void _handleNotificationResponse(NotificationResponse response) {
+  debugPrint('main.dart: 알림 응답 처리: ${response.payload}');
+  
+  // 알람 서비스를 통해 알람음 재생
+  if (response.payload != null && response.payload!.isNotEmpty) {
+    AlarmService().playAlarmSound(response.payload!);
+  } else {
+    AlarmService().playAlarmSound('assets/default_alarm.mp3');
+  }
+}
 Future<void> main() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
   
+  // 디버그 메시지
+  debugPrint('앱 시작: ${DateTime.now().toString()}');
+  
+  // Android 12+ 에서 정확한 알람 권한 요청
+  if (Platform.isAndroid) {
+    try {
+      // 필요한 권한 요청
+      await _requestPermissions();
+    } catch (e) {
+      debugPrint('권한 요청 오류: $e');
+    }
+  }
+  
   // 타임존 초기화
-  tz.initializeTimeZones();
-  tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+  try {
+    tz.initializeTimeZones();
+    tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+    debugPrint('타임존 초기화 완료: ${tz.local.name}');
+  } catch (e) {
+    debugPrint('타임존 초기화 오류: $e');
+  }
   
-  // 오디오 서비스 초기화
-  audioHandler = await initAudioService();
-  
-  // 알람 관련 초기화
-  await AndroidAlarmManager.initialize();
+  // Android Alarm Manager 초기화 - 콜백 핸들러로 AlarmReceiver.onAlarm 등록
+  try {
+    final alarmManagerInitialized = await AndroidAlarmManager.initialize();
+    debugPrint('AndroidAlarmManager 초기화: ${alarmManagerInitialized ? '성공' : '실패'}');
+  } catch (e) {
+    debugPrint('AndroidAlarmManager 초기화 오류: $e');
+  }
   
   // 로컬 알림 초기화
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
-      FlutterLocalNotificationsPlugin();
+  try {
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
+        FlutterLocalNotificationsPlugin();
+    
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+        
+    final DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings();
+        
+    final InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+    
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: _handleNotificationResponse,
+    );
+    
+    // 알림 채널 생성
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'alarm_channel',
+      '알람',
+      description: '알람 알림 채널',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      enableLights: true,
+    );
+    
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+    
+    debugPrint('FlutterLocalNotifications 초기화 완료');
+  } catch (e) {
+    debugPrint('FlutterLocalNotifications 초기화 오류: $e');
+  }
   
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-      
-  final DarwinInitializationSettings initializationSettingsIOS =
-      DarwinInitializationSettings();
-      
-  final InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-    iOS: initializationSettingsIOS,
-  );
-  
-  await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings,
-  );
+  // 오디오 서비스 초기화
+  try {
+    audioHandler = await initAudioService();
+    debugPrint('AudioService 초기화 완료');
+  } catch (e) {
+    debugPrint('AudioService 초기화 오류: $e');
+  }
   
   // 알람 서비스 초기화
-  final alarmService = AlarmService();
-  await alarmService.initialize();
+  try {
+    final alarmService = AlarmService();
+    await alarmService.initialize();
+    debugPrint('AlarmService 초기화 완료');
+  } catch (e) {
+    debugPrint('AlarmService 초기화 오류: $e');
+  }
 
   // 앱 시작
   runApp(const MyApp());
+}
+
+// 필요한 권한 요청
+Future<void> _requestPermissions() async {
+  // 안드로이드 버전 확인 (Android 12+는 SDK 31 이상)
+  if (await Permission.scheduleExactAlarm.isDenied) {
+    await Permission.scheduleExactAlarm.request();
+    debugPrint('정확한 알람 권한 요청됨');
+  }
+  
+  // 알림 권한
+  if (await Permission.notification.isDenied) {
+    await Permission.notification.request();
+    debugPrint('알림 권한 요청됨');
+  }
+  
+  // 스토리지 권한 (파일 다운로드를 위해)
+  if (await Permission.storage.isDenied) {
+    await Permission.storage.request();
+    debugPrint('스토리지 권한 요청됨');
+  }
+  
+  // Android 13+ (SDK 33+)에서는 추가 권한 필요
+  if (Platform.isAndroid) {
+    try {
+      await Permission.audio.request();
+      await Permission.videos.request();
+      await Permission.photos.request();
+      debugPrint('미디어 권한 요청됨');
+    } catch (e) {
+      debugPrint('미디어 권한 요청 실패: $e');
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
