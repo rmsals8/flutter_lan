@@ -1,0 +1,57 @@
+name: lingedge1
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=2.19.0 <4.0.0'  # 더 넓은 범위의 SDK 버전 지원
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+    
+  # 기본 아이콘
+  cupertino_icons: ^1.0.5  # 안정적인 버전
+  
+  # 인증 및 API 관련
+  http: ^1.0.0
+  provider: ^6.0.5
+  shared_preferences: ^2.2.0
+  flutter_secure_storage: ^9.2.4  # 안정적인 버전
+  google_sign_in: ^6.1.4
+  
+  # 국제화
+  intl: ^0.19.0  # Flutter 3.x와 호환되는 안정적인 버전
+  
+  # 유효성 검사
+  email_validator: ^3.0.0
+  
+  # 파일 관련
+  path_provider: ^2.1.0
+  open_file: ^3.3.2
+  file_picker: ^10.1.9
+  permission_handler: ^12.0.0+1
+  
+  # URL 실행 (추가 필요)
+  url_launcher: ^6.1.12
+
+  flutter_local_notifications: ^19.2.1
+  timezone: ^0.10.0
+  android_alarm_manager_plus: ^4.0.7 # 안드로이드 알람 관리
+  audio_service: ^0.18.12  # 오디오 재생 백그라운드 서비스
+  just_audio: ^0.9.36  # 오디오 재생 라이브러리
+  rxdart: ^0.28.0  # 스트림 관리
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0  # 안정적인 버전
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/default_alarm.mp3
+    - assets/default_cover.png
