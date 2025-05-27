@@ -204,26 +204,81 @@ class AlarmService {
 
   // 알람 업데이트
   Future<void> updateAlarm(Alarm alarm) async {
+    debugPrint('======== 알람 업데이트 시작: ID=${alarm.id}, 시간=${alarm.time.hour}:${alarm.time.minute} ========');
+
     final alarms = await loadAlarms();
     final index = alarms.indexWhere((a) => a.id == alarm.id);
 
     if (index != -1) {
-      // 기존 알람 취소 (안전한 ID 사용)
-      await cancelAlarm(alarms[index]);
+      final oldAlarm = alarms[index];
 
-      // 알람 업데이트
+      // 1. 기존 알람의 모든 가능한 ID로 취소 시도
+      debugPrint('알람 업데이트: 기존 알람 취소 시작');
+      await _cancelAllVariationsOfAlarm(oldAlarm);
+
+      // 2. 잠시 기다림 (시스템이 취소를 처리할 시간을 줌)
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // 3. 알람 목록 업데이트
       alarms[index] = alarm;
       await saveAlarms(alarms);
+      debugPrint('알람 업데이트: 알람 목록 저장 완료');
 
-      // 활성화된 경우 다시 예약 (안전한 ID 사용)
+      // 4. 새 알람이 활성화된 경우에만 다시 예약
       if (alarm.isEnabled) {
+        debugPrint('알람 업데이트: 새 알람 예약 시작');
         await scheduleAlarm(alarm);
+        debugPrint('알람 업데이트: 새 알람 예약 완료');
+      } else {
+        debugPrint('알람 업데이트: 알람이 비활성화 상태이므로 예약하지 않음');
       }
 
       debugPrint('알람 업데이트 완료: ID=${alarm.id}, 활성화=${alarm.isEnabled}, 시간=${alarm.time.hour}:${alarm.time.minute}');
     } else {
       debugPrint('업데이트할 알람을 찾을 수 없음: ID=${alarm.id}');
+      // 알람이 없다면 새로 추가
+      debugPrint('알람을 새로 추가합니다');
+      await addAlarm(alarm);
     }
+  }
+
+// 알람의 모든 가능한 ID 변형을 취소하는 새로운 메서드
+  Future<void> _cancelAllVariationsOfAlarm(Alarm alarm) async {
+    debugPrint('알람: 모든 변형 ID 취소 시작');
+
+    // 기본 ID 계산
+    int baseId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
+    int safeId = baseId % 1000000;
+
+    // 여러 가능한 ID로 취소 시도
+    List<int> possibleIds = [
+      safeId,
+      alarm.id,
+      baseId,
+      alarm.id * 1000 + alarm.time.hour * 10 + (alarm.time.minute ~/ 10),
+    ];
+
+    for (int id in possibleIds) {
+      try {
+        // AndroidAlarmManager 취소
+        await AndroidAlarmManager.cancel(id);
+        debugPrint('알람: AndroidAlarmManager 취소 시도 - ID: $id');
+
+        // FlutterLocalNotifications 취소
+        await flutterLocalNotificationsPlugin.cancel(id);
+        debugPrint('알람: FlutterLocalNotifications 취소 시도 - ID: $id');
+
+        // SharedPreferences 데이터 삭제
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('alarm_data_$id');
+        debugPrint('알람: SharedPreferences 데이터 삭제 - ID: $id');
+
+      } catch (e) {
+        debugPrint('알람: ID $id 취소 중 오류 (무시): $e');
+      }
+    }
+
+    debugPrint('알람: 모든 변형 ID 취소 완료');
   }
 
   // 알람 삭제
@@ -287,6 +342,7 @@ class AlarmService {
     await initialize();
     debugPrint('알람 예약: 서비스 초기화 완료');
 
+    // 다음 알람 시간 계산
     final alarmTime = _calculateNextAlarmTime(alarm);
     if (alarmTime == null) {
       debugPrint('알람 예약 실패: 다음 알람 시간을 계산할 수 없음');
@@ -295,14 +351,22 @@ class AlarmService {
 
     debugPrint('알람 예약: 다음 알람 시간 계산됨 - ${alarmTime.toString()}');
 
-    // 고유한 알람 ID 생성 (알람 ID + 시간 정보)
+    // 고유한 알람 ID 생성 (더 간단하고 안정적인 방법)
     int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
+    int safeId = uniqueId % 1000000; // 32비트 정수 범위 내로 제한
 
-    // 32비트 정수 범위 내로 제한 (더 간단한 ID 사용)
-    int safeId = uniqueId % 1000000;
-    debugPrint('알람 예약: 알람 ID 생성됨 - $safeId');
+    debugPrint('알람 예약: 생성된 안전한 ID - $safeId');
 
-    // 알람 데이터 저장 (콜백에서 사용) - 알람 화면 표시용 데이터 추가
+    // 기존에 같은 ID로 예약된 알람이 있다면 취소
+    try {
+      await AndroidAlarmManager.cancel(safeId);
+      await flutterLocalNotificationsPlugin.cancel(safeId);
+      debugPrint('알람 예약: 기존 알람 취소 완료');
+    } catch (e) {
+      debugPrint('알람 예약: 기존 알람 취소 중 오류 (무시): $e');
+    }
+
+    // 알람 데이터 저장 (콜백에서 사용)
     debugPrint('알람 예약: SharedPreferences에 데이터 저장 시작');
     final prefs = await SharedPreferences.getInstance();
     final alarmData = {
@@ -315,66 +379,40 @@ class AlarmService {
       'isRepeating': alarm.repeatDays.contains(true),
       'repeatDays': alarm.repeatDays,
       'setAt': DateTime.now().toString(),
-      'showScreen': true, // 알람 화면 표시 여부 (새로 추가)
+      'safeId': safeId, // 실제 사용된 ID 저장
     };
 
     await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
-    debugPrint('알람 예약: 데이터 저장 완료 - ${jsonEncode(alarmData)}');
+    debugPrint('알람 예약: 데이터 저장 완료');
 
-    // 알람 매니저로 예약
+    // 현재 시간과 알람 시간 계산
     final now = DateTime.now();
-    debugPrint('알람 예약: 현재 시간 - ${now.toString()}');
-
     final alarmDateTime = DateTime(
       alarmTime.year,
       alarmTime.month,
       alarmTime.day,
       alarm.time.hour,
       alarm.time.minute,
-      0,
+      0, // 초는 0으로 설정
     );
 
-    debugPrint('알람 예약: 알람 시간 - ${alarmDateTime.toString()}');
+    debugPrint('알람 예약: 현재 시간 - ${now.toString()}');
+    debugPrint('알람 예약: 예약할 시간 - ${alarmDateTime.toString()}');
 
-    // 이미 지난 시간이면 내일로 설정
-    if (alarmDateTime.isBefore(now)) {
-      debugPrint('알람 예약: 이미 지난 시간임, 내일로 설정');
-      final newAlarmDateTime = alarmDateTime.add(const Duration(days: 1));
-      debugPrint('알람 예약: 새 알람 시간 - ${newAlarmDateTime.toString()}');
-
-      // main.dart의 alarmCallback 함수 사용
-      final success = await AndroidAlarmManager.oneShotAt(
-        newAlarmDateTime,
-        safeId,
-        alarmCallback,
-        exact: true,
-        wakeup: true,
-        alarmClock: true,
-        rescheduleOnReboot: true,
-      );
-
-      if (success) {
-        debugPrint('알람 예약 성공 (다음날): ID=$safeId, 시간=${newAlarmDateTime.toString()}');
-
-        // 알람 데이터 업데이트
-        alarmData['adjustedTime'] = newAlarmDateTime.toString();
-        await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
-        debugPrint('알람 예약: 조정된 시간으로 데이터 업데이트 완료');
-      } else {
-        debugPrint('알람 예약 실패: ID=$safeId');
-      }
-
-      return;
+    // 이미 지난 시간이면 다음날로 설정
+    DateTime finalAlarmTime = alarmDateTime;
+    if (alarmDateTime.isBefore(now.add(const Duration(seconds: 5)))) {
+      finalAlarmTime = alarmDateTime.add(const Duration(days: 1));
+      debugPrint('알람 예약: 이미 지난 시간이므로 다음날로 설정 - ${finalAlarmTime.toString()}');
     }
 
-    // 안드로이드 알람 매니저 예약 (정상적인 미래 시간)
-    debugPrint('알람 예약: AndroidAlarmManager.oneShotAt 호출 준비 (당일)');
+    // 안드로이드 알람 매니저로 예약
+    debugPrint('알람 예약: AndroidAlarmManager.oneShotAt 호출');
 
-    // main.dart의 alarmCallback 함수 사용
     final success = await AndroidAlarmManager.oneShotAt(
-      alarmDateTime,
+      finalAlarmTime,
       safeId,
-      alarmCallback,
+      alarmCallback, // main.dart의 alarmCallback 함수 사용
       exact: true,
       wakeup: true,
       alarmClock: true,
@@ -382,20 +420,14 @@ class AlarmService {
     );
 
     if (success) {
-      debugPrint('알람 예약 성공: ID=$safeId, 시간=${alarmDateTime.toString()}');
-
-      // 알람 데이터 업데이트
+      // 성공 시 최종 데이터 업데이트
+      alarmData['scheduledTime'] = finalAlarmTime.toString();
       alarmData['scheduledAt'] = DateTime.now().toString();
       await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
-      debugPrint('알람 예약: 최종 데이터 업데이트 완료');
 
-      // 디버깅용 - 예약된 알람 확인
-      final checkData = await prefs.getString('alarm_data_$safeId');
-      debugPrint('알람 예약: 저장된 데이터 확인 - $checkData');
-
-      // 다음 트리거 시간 계산 (디버깅용)
-      final triggerInSeconds = alarmDateTime.difference(now).inSeconds;
-      debugPrint('알람 예약: $triggerInSeconds초 후에 알람이 울립니다');
+      final triggerInSeconds = finalAlarmTime.difference(now).inSeconds;
+      debugPrint('알람 예약 성공: ID=$safeId, ${triggerInSeconds}초 후 울림');
+      debugPrint('======== 알람 예약 완료 ========');
     } else {
       debugPrint('알람 예약 실패: ID=$safeId');
     }
@@ -403,25 +435,13 @@ class AlarmService {
 
   // 알람 취소
   Future<void> cancelAlarm(Alarm alarm) async {
-    // 고유한 알람 ID 생성 (알람 ID + 시간 정보)
-    int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
+    debugPrint('======== 알람 취소 시작: ID=${alarm.id} ========');
 
-    // 32비트 정수 범위 내로 제한
-    int safeId = uniqueId % 1000000;
+    // 모든 가능한 변형 ID로 취소 시도
+    await _cancelAllVariationsOfAlarm(alarm);
 
-    // AndroidAlarmManager 알람 취소
-    final success = await AndroidAlarmManager.cancel(safeId);
-    debugPrint('AndroidAlarmManager 알람 취소: ID=$safeId, 성공=${success ? '성공' : '실패'}');
-
-    // FlutterLocalNotifications 알람 취소
-    await flutterLocalNotificationsPlugin.cancel(safeId);
-    debugPrint('FlutterLocalNotifications 알람 취소: ID=$safeId');
-
-    // 저장된 알람 데이터 삭제
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('alarm_data_$safeId');
+    debugPrint('======== 알람 취소 완료: ID=${alarm.id} ========');
   }
-
   // 모든 알람 취소
   Future<void> cancelAllAlarms() async {
     // 저장된 모든 알람 불러오기

@@ -62,102 +62,141 @@ Future<void> alarmCallback(int id) async {
 
 @pragma('vm:entry-point')
 void _handleNotificationResponse(NotificationResponse response) {
-  debugPrint('main.dart: 알림 응답 처리: ${response.payload}');
+  debugPrint('main.dart: 알림 응답 처리 시작: ${response.payload}');
 
-  // 알림을 탭했을 때 알람 화면으로 이동
-  if (response.payload != null) {
-    if (response.payload!.startsWith('alarm_wakeup_')) {
-      // 앱 깨우기 알림을 탭한 경우
-      final alarmIdStr = response.payload!.replaceFirst('alarm_wakeup_', '');
+  try {
+    // 알림을 탭했을 때 알람 화면으로 이동
+    if (response.payload != null && response.payload!.isNotEmpty) {
 
-      try {
-        final alarmId = int.parse(alarmIdStr);
-        _showAlarmScreenFromNotification(alarmId);
-      } catch (e) {
-        debugPrint('알람 ID 파싱 오류: $e');
+      // 전체화면 알람 알림을 탭한 경우
+      if (response.payload!.startsWith('alarm_fullscreen_')) {
+        final alarmIdStr = response.payload!.replaceFirst('alarm_fullscreen_', '');
+        debugPrint('main.dart: 전체화면 알람 알림 탭됨 - ID: $alarmIdStr');
+
+        try {
+          final alarmId = int.parse(alarmIdStr);
+          _showAlarmScreenFromNotification(alarmId);
+        } catch (e) {
+          debugPrint('main.dart: 알람 ID 파싱 오류: $e');
+        }
       }
-    } else if (response.payload!.startsWith('alarm_')) {
+      // 백업 알람 알림을 탭한 경우
+      else if (response.payload!.startsWith('alarm_backup_')) {
+        final alarmIdStr = response.payload!.replaceFirst('alarm_backup_', '');
+        debugPrint('main.dart: 백업 알람 알림 탭됨 - ID: $alarmIdStr');
+
+        try {
+          final alarmId = int.parse(alarmIdStr);
+          _showAlarmScreenFromNotification(alarmId);
+        } catch (e) {
+          debugPrint('main.dart: 알람 ID 파싱 오류: $e');
+        }
+      }
       // 일반 알람 알림을 탭한 경우
-      final alarmIdStr = response.payload!.replaceFirst('alarm_', '');
+      else if (response.payload!.startsWith('alarm_')) {
+        final alarmIdStr = response.payload!.replaceFirst('alarm_', '');
+        debugPrint('main.dart: 일반 알람 알림 탭됨 - ID: $alarmIdStr');
 
-      try {
-        final alarmId = int.parse(alarmIdStr);
-        _showAlarmScreenFromNotification(alarmId);
-      } catch (e) {
-        debugPrint('알람 ID 파싱 오류: $e');
+        try {
+          final alarmId = int.parse(alarmIdStr);
+          _showAlarmScreenFromNotification(alarmId);
+        } catch (e) {
+          debugPrint('main.dart: 알람 ID 파싱 오류: $e');
+        }
       }
+
+      debugPrint('main.dart: 알림 응답 처리 완료');
+    } else {
+      debugPrint('main.dart: 알림 페이로드가 비어있음');
     }
+  } catch (e) {
+    debugPrint('main.dart: 알림 응답 처리 중 전체 오류: $e');
   }
 }
-
-// 알림에서 알람 화면을 표시하는 기능 - 개선된 버전
+// 기본 알람 생성 함수 (알림용)
+Alarm _createDefaultAlarmForNotification(int alarmId) {
+  final now = DateTime.now();
+  return Alarm(
+    id: alarmId,
+    time: TimeOfDay(hour: now.hour, minute: now.minute),
+    repeatDays: List.filled(7, false),
+    label: '알람',
+    soundPath: 'assets/default_alarm.mp3',
+    soundName: '기본 알람음',
+    isEnabled: true,
+  );
+}
+// 알림에서 알람 화면을 표시하는 기능 - 더욱 개선된 버전
 void _showAlarmScreenFromNotification(int alarmId) async {
   try {
-    debugPrint('알림에서 알람 화면 표시: ID=$alarmId');
+    debugPrint('main.dart: 알림에서 알람 화면 표시 시도 - ID: $alarmId');
 
-    // 앱이 실행 중이고 네비게이터가 준비되어 있다면
-    if (navigatorKey.currentContext != null) {
-      // SharedPreferences에서 실제 알람 데이터 가져오기
+    // SharedPreferences에서 실제 알람 데이터 가져오기
+    final prefs = await SharedPreferences.getInstance();
+
+    // 여러 가능한 키로 데이터 찾기 시도
+    String? alarmJson;
+    List<String> possibleKeys = [
+      'alarm_data_$alarmId',
+      'alarm_data_${alarmId}0000', // 기본 시간으로 생성된 키
+    ];
+
+    for (String key in possibleKeys) {
+      alarmJson = prefs.getString(key);
+      if (alarmJson != null) {
+        debugPrint('main.dart: 알람 데이터 발견 - 키: $key');
+        break;
+      }
+    }
+
+    Alarm alarm;
+    if (alarmJson != null) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        final alarmJson = prefs.getString('alarm_data_$alarmId');
-
-        Alarm alarm;
-        if (alarmJson != null) {
-          final Map<String, dynamic> alarmMap = jsonDecode(alarmJson);
-          alarm = Alarm(
-            id: alarmMap['id'] ?? alarmId,
-            time: TimeOfDay(
-              hour: alarmMap['hour'] ?? TimeOfDay.now().hour,
-              minute: alarmMap['minute'] ?? TimeOfDay.now().minute,
-            ),
-            repeatDays: List<bool>.from(alarmMap['repeatDays'] ?? List.filled(7, false)),
-            label: alarmMap['label'] ?? '알람',
-            soundPath: alarmMap['soundPath'] ?? 'assets/default_alarm.mp3',
-            soundName: alarmMap['soundName'] ?? '기본 알람음',
-          );
-        } else {
-          // 기본 알람 객체 생성
-          alarm = Alarm(
-            id: alarmId,
-            time: TimeOfDay.now(),
-            repeatDays: List.filled(7, false),
-            label: '알람',
-            soundPath: 'assets/default_alarm.mp3',
-            soundName: '기본 알람음',
-          );
-        }
-
-        // 알람 화면으로 이동
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/alarm-ringing',
-              (route) => false, // 모든 이전 화면 제거
-          arguments: {'alarm': alarm},
+        final Map<String, dynamic> alarmMap = jsonDecode(alarmJson);
+        alarm = Alarm(
+          id: alarmMap['id'] ?? alarmId,
+          time: TimeOfDay(
+            hour: alarmMap['hour'] ?? TimeOfDay.now().hour,
+            minute: alarmMap['minute'] ?? TimeOfDay.now().minute,
+          ),
+          repeatDays: List<bool>.from(alarmMap['repeatDays'] ?? List.filled(7, false)),
+          label: alarmMap['label'] ?? '알람',
+          soundPath: alarmMap['soundPath'] ?? 'assets/default_alarm.mp3',
+          soundName: alarmMap['soundName'] ?? '기본 알람음',
+          isEnabled: true,
         );
+        debugPrint('main.dart: 저장된 알람 데이터 로드 성공');
       } catch (e) {
-        debugPrint('알람 데이터 로드 오류: $e');
+        debugPrint('main.dart: 알람 데이터 파싱 오류: $e');
+        alarm = _createDefaultAlarmForNotification(alarmId);
+      }
+    } else {
+      debugPrint('main.dart: 저장된 데이터 없음, 기본 알람 생성');
+      alarm = _createDefaultAlarmForNotification(alarmId);
+    }
 
-        // 오류 발생 시 기본 알람으로 표시
-        final defaultAlarm = Alarm(
-          id: alarmId,
-          time: TimeOfDay.now(),
-          repeatDays: List.filled(7, false),
-          label: '알람',
-          soundPath: 'assets/default_alarm.mp3',
-          soundName: '기본 알람음',
-        );
+    // 앱이 실행 중이고 네비게이터가 준비되어 있다면 화면 표시
+    if (navigatorKey.currentContext != null) {
+      debugPrint('main.dart: 네비게이터 준비됨, 알람 화면으로 이동');
 
+      // 현재 화면이 알람 화면이 아닌 경우에만 이동
+      final currentRoute = ModalRoute.of(navigatorKey.currentContext!)?.settings.name;
+      if (currentRoute != '/alarm-ringing') {
+        // 알람 화면으로 이동 (모든 이전 화면 제거)
         navigatorKey.currentState?.pushNamedAndRemoveUntil(
           '/alarm-ringing',
               (route) => false,
-          arguments: {'alarm': defaultAlarm},
+          arguments: {'alarm': alarm},
         );
+        debugPrint('main.dart: 알람 화면으로 이동 완료');
+      } else {
+        debugPrint('main.dart: 이미 알람 화면에 있음');
       }
     } else {
-      debugPrint('네비게이터가 준비되지 않음');
+      debugPrint('main.dart: 네비게이터가 준비되지 않음');
     }
   } catch (e) {
-    debugPrint('알림에서 알람 화면 표시 오류: $e');
+    debugPrint('main.dart: 알림에서 알람 화면 표시 중 오류: $e');
   }
 }
 

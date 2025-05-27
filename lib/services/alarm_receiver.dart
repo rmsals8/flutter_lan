@@ -1,12 +1,14 @@
 // lib/services/alarm_receiver.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data'; // Int64List를 사용하기 위해 추가
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dart:io';
 import '../main.dart'; // main.dart에서 navigatorKey를 import
+import '../models/alarm.dart';
 
 // 알람 콜백용 독립적인 클래스
 class AlarmReceiver {
@@ -22,11 +24,11 @@ class AlarmReceiver {
       // 1. 알람음 재생 (가장 먼저)
       await _playSound('assets/default_alarm.mp3');
 
-      // 2. 알림 표시
-      await _showAlarmNotification(id);
+      // 2. 전체화면 알람 화면 표시 (가장 중요한 부분)
+      await _showFullScreenAlarm(id);
 
-      // 3. 앱을 깨우고 알람 화면 표시
-      await _wakeUpAppAndShowAlarmScreen(id);
+      // 3. 백업용 알림도 표시
+      await _showAlarmNotification(id);
 
     } catch (e) {
       debugPrint('알람: 전체 프로세스 오류: $e');
@@ -44,50 +46,86 @@ class AlarmReceiver {
     }
   }
 
-  // 앱을 깨우고 알람 화면을 표시하는 기능
-  static Future<void> _wakeUpAppAndShowAlarmScreen(int id) async {
+  // 전체화면 알람을 표시하는 새로운 기능 (가장 중요!)
+  static Future<void> _showFullScreenAlarm(int id) async {
     try {
-      debugPrint('알람: 앱 깨우기 및 알람 화면 표시 시도');
+      debugPrint('알람: 전체화면 알람 표시 시도 - ID: $id');
 
       // SharedPreferences에서 알람 정보 가져오기
       final prefs = await SharedPreferences.getInstance();
       final alarmJson = prefs.getString('alarm_data_$id');
 
+      Alarm alarm;
       if (alarmJson != null) {
-        final Map<String, dynamic> alarmMap = jsonDecode(alarmJson);
-
-        // 알람 객체 생성
-        final alarm = _createAlarmFromMap(alarmMap);
-
-        // 앱 깨우기 알림 (fullScreenIntent 사용)
-        await _showWakeUpNotification(id, alarm);
-
-        // 앱이 실행 중이고 네비게이터가 준비되어 있다면 화면 표시
-        if (navigatorKey.currentContext != null) {
-          debugPrint('알람: 앱이 실행 중임, 알람 화면으로 이동');
-
-          // 잠시 기다린 후 알람 화면으로 이동
-          await Future.delayed(const Duration(milliseconds: 500));
-
-          navigatorKey.currentState?.pushNamed(
-            '/alarm-ringing',
-            arguments: {'alarm': alarm},
+        try {
+          final Map<String, dynamic> alarmMap = jsonDecode(alarmJson);
+          alarm = Alarm(
+            id: alarmMap['id'] ?? id,
+            time: TimeOfDay(
+              hour: alarmMap['hour'] ?? TimeOfDay.now().hour,
+              minute: alarmMap['minute'] ?? TimeOfDay.now().minute,
+            ),
+            repeatDays: List<bool>.from(alarmMap['repeatDays'] ?? List.filled(7, false)),
+            label: alarmMap['label'] ?? '알람',
+            soundPath: alarmMap['soundPath'] ?? 'assets/default_alarm.mp3',
+            soundName: alarmMap['soundName'] ?? '기본 알람음',
+            isEnabled: true,
           );
-        } else {
-          debugPrint('알람: 앱이 실행되지 않음, fullScreenIntent 알림으로 앱 깨우기');
+          debugPrint('알람: 저장된 알람 데이터 로드 성공');
+        } catch (e) {
+          debugPrint('알람: 저장된 데이터 파싱 오류: $e');
+          alarm = _createDefaultAlarm(id);
         }
+      } else {
+        debugPrint('알람: 저장된 데이터 없음, 기본 알람 생성');
+        alarm = _createDefaultAlarm(id);
       }
+
+      // 전체화면 intent 알림 생성 (앱이 꺼져있어도 깨우는 기능)
+      await _showFullScreenIntent(id, alarm);
+
+      // 앱이 실행 중이면 직접 화면 표시
+      if (navigatorKey.currentContext != null) {
+        debugPrint('알람: 앱이 실행 중, 직접 알람 화면으로 이동');
+
+        // 잠시 기다린 후 알람 화면으로 이동
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/alarm-ringing',
+              (route) => false, // 모든 이전 화면 제거
+          arguments: {'alarm': alarm},
+        );
+      } else {
+        debugPrint('알람: 앱이 실행되지 않음, fullScreenIntent로 앱 깨우기');
+      }
+
     } catch (e) {
-      debugPrint('알람: 앱 깨우기 및 화면 표시 오류: $e');
+      debugPrint('알람: 전체화면 알람 표시 오류: $e');
     }
   }
 
-  // 앱을 깨우는 전체 화면 알림
-  static Future<void> _showWakeUpNotification(int id, dynamic alarm) async {
-    try {
-      debugPrint('알람: 앱 깨우기 알림 표시 시작');
+  // 기본 알람 생성 기능
+  static Alarm _createDefaultAlarm(int id) {
+    final now = DateTime.now();
+    return Alarm(
+      id: id,
+      time: TimeOfDay(hour: now.hour, minute: now.minute),
+      repeatDays: List.filled(7, false),
+      label: '알람',
+      soundPath: 'assets/default_alarm.mp3',
+      soundName: '기본 알람음',
+      isEnabled: true,
+    );
+  }
 
-      final FlutterLocalNotificationsPlugin notificationsPlugin = FlutterLocalNotificationsPlugin();
+  // 전체화면 Intent 알림 (앱을 깨우고 화면을 켜는 기능)
+  static Future<void> _showFullScreenIntent(int id, Alarm alarm) async {
+    try {
+      debugPrint('알람: 전체화면 Intent 알림 생성 시작');
+
+      final FlutterLocalNotificationsPlugin notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
       // 알림 초기화
       const AndroidInitializationSettings initializationSettingsAndroid =
@@ -101,125 +139,126 @@ class AlarmReceiver {
         iOS: initializationSettingsDarwin,
       );
 
-      await notificationsPlugin.initialize(initializationSettings);
+      await notificationsPlugin.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          debugPrint('알람: 알림 응답 수신: ${response.payload}');
 
-      // Android 알림 채널 설정
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'alarm_wakeup_channel',
-        '알람 깨우기',
-        description: '앱을 깨우는 알람 채널',
-        importance: Importance.max,
-        enableVibration: true,
-        playSound: false,
+          // 알림을 탭했을 때 알람 화면 표시
+          if (response.payload != null && response.payload!.contains('alarm_')) {
+            _handleNotificationTap(response.payload!, alarm);
+          }
+        },
       );
 
-      // 채널 생성
+      // 전체화면 알림 채널 생성
+      const AndroidNotificationChannel fullScreenChannel = AndroidNotificationChannel(
+        'alarm_fullscreen_channel',
+        '전체화면 알람',
+        description: '전체화면으로 표시되는 알람',
+        importance: Importance.max,
+        enableVibration: true,
+        enableLights: true,
+        playSound: false, // 우리가 직접 소리를 재생하므로 false
+      );
+
       await notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+          ?.createNotificationChannel(fullScreenChannel);
 
-      // 전체 화면 알림 세부 사항 (앱을 깨우는 용도)
+      // 전체화면 알림 세부사항 (핵심: fullScreenIntent = true)
       final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'alarm_wakeup_channel',
-        '알람 깨우기',
-        channelDescription: '앱을 깨우는 알람 채널',
+        'alarm_fullscreen_channel',
+        '전체화면 알람',
+        channelDescription: '전체화면으로 표시되는 알람',
         importance: Importance.max,
         priority: Priority.high,
-        fullScreenIntent: true, // 전체 화면으로 앱 깨우기
+        fullScreenIntent: true, // 가장 중요한 부분!
         visibility: NotificationVisibility.public,
         category: AndroidNotificationCategory.alarm,
-        sound: null,
-        playSound: false,
         ongoing: true,
         autoCancel: false,
         showWhen: true,
         when: DateTime.now().millisecondsSinceEpoch,
-        usesChronometer: false,
         enableVibration: true,
         enableLights: true,
         ledColor: const Color(0xFF3498DB),
         ledOnMs: 1000,
         ledOffMs: 500,
+        sound: null, // 소리는 직접 재생
+        playSound: false,
+        // 화면을 켜고 잠금을 해제하는 추가 옵션들
+        usesChronometer: false,
+        timeoutAfter: 60000, // 60초 후 자동 타임아웃
       );
 
       final NotificationDetails details = NotificationDetails(android: androidDetails);
 
-      final String alarmTitle = alarm['label'] ?? '알람';
-
-      // 앱 깨우기 알림 표시
+      // 전체화면 알림 표시
       await notificationsPlugin.show(
-        id + 10000, // 다른 ID 사용 (중복 방지)
-        '⏰ $alarmTitle',
-        '알람 시간입니다! 탭해서 알람을 끄세요.',
+        id,
+        '⏰ ${alarm.label}',
+        '알람 시간입니다! ${alarm.readableTime}',
         details,
-        payload: 'alarm_wakeup_$id',
+        payload: 'alarm_fullscreen_$id',
       );
 
-      debugPrint('알람: 앱 깨우기 알림 표시 성공: ID=${id + 10000}');
+      debugPrint('알람: 전체화면 Intent 알림 표시 완료');
+
     } catch (e) {
-      debugPrint('알람: 앱 깨우기 알림 표시 오류: $e');
+      debugPrint('알람: 전체화면 Intent 알림 오류: $e');
     }
   }
 
-  // Map에서 Alarm 객체 생성
-  static dynamic _createAlarmFromMap(Map<String, dynamic> alarmMap) {
-    return {
-      'id': alarmMap['id'] ?? 0,
-      'label': alarmMap['label'] ?? '알람',
-      'soundPath': alarmMap['soundPath'] ?? 'assets/default_alarm.mp3',
-      'soundName': alarmMap['soundName'] ?? '기본 알람음',
-      'hour': alarmMap['hour'] ?? 7,
-      'minute': alarmMap['minute'] ?? 0,
-    };
+  // 알림 탭 처리 기능
+  static void _handleNotificationTap(String payload, Alarm alarm) {
+    try {
+      debugPrint('알람: 알림 탭 처리 시작: $payload');
+
+      // 앱이 실행 중이면 알람 화면으로 이동
+      if (navigatorKey.currentContext != null) {
+        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/alarm-ringing',
+              (route) => false,
+          arguments: {'alarm': alarm},
+        );
+      }
+    } catch (e) {
+      debugPrint('알람: 알림 탭 처리 오류: $e');
+    }
   }
 
-  // 일반 알림 표시 기능
+  // 일반 알림 표시 기능 (백업용)
   static Future<void> _showAlarmNotification(int id) async {
-    debugPrint('알람: 일반 알림 표시 시작');
+    debugPrint('알람: 백업 알림 표시 시작');
 
     try {
-      final FlutterLocalNotificationsPlugin notificationsPlugin = FlutterLocalNotificationsPlugin();
+      final FlutterLocalNotificationsPlugin notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
-      // 알림 초기화
-      const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-
-      final DarwinInitializationSettings initializationSettingsDarwin =
-      DarwinInitializationSettings();
-
-      final InitializationSettings initializationSettings = InitializationSettings(
-        android: initializationSettingsAndroid,
-        iOS: initializationSettingsDarwin,
-      );
-
-      await notificationsPlugin.initialize(initializationSettings);
-
-      // Android 알림 채널 설정
+      // 일반 알림 채널
       const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'alarm_channel',
-        '알람',
-        description: '알람 알림 채널',
-        importance: Importance.max,
+        'alarm_backup_channel',
+        '백업 알람',
+        description: '백업용 알람 알림',
+        importance: Importance.high,
         enableVibration: true,
         playSound: false,
       );
 
-      // 채널 생성
       await notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
 
-      // 일반 알림 세부 사항
+      // 백업 알림 세부사항
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'alarm_channel',
-        '알람',
-        channelDescription: '알람 알림 채널',
-        importance: Importance.max,
+        'alarm_backup_channel',
+        '백업 알람',
+        channelDescription: '백업용 알람 알림',
+        importance: Importance.high,
         priority: Priority.high,
         visibility: NotificationVisibility.public,
         category: AndroidNotificationCategory.alarm,
-        sound: null,
-        playSound: false,
         ongoing: true,
         autoCancel: false,
       );
@@ -236,22 +275,22 @@ class AlarmReceiver {
           final Map<String, dynamic> alarmMap = jsonDecode(alarmJson);
           alarmTitle = alarmMap['label'] as String? ?? '알람';
         } catch (e) {
-          debugPrint('알람: 데이터 파싱 오류: $e');
+          debugPrint('알람: 백업 알림 데이터 파싱 오류: $e');
         }
       }
 
-      // 일반 알림 표시
+      // 백업 알림 표시
       await notificationsPlugin.show(
-        id,
+        id + 1000, // 다른 ID 사용
         alarmTitle,
         '알람 시간입니다!',
         details,
-        payload: 'alarm_$id',
+        payload: 'alarm_backup_$id',
       );
 
-      debugPrint('알람: 일반 알림 표시 성공: ID=$id');
+      debugPrint('알람: 백업 알림 표시 성공');
     } catch (e) {
-      debugPrint('알람: 일반 알림 표시 오류: $e');
+      debugPrint('알람: 백업 알림 표시 오류: $e');
     }
   }
 
@@ -282,25 +321,25 @@ class AlarmReceiver {
       await player.setAsset('assets/default_alarm.mp3');
       debugPrint('알람: 에셋 로드 완료');
 
-      // 5. 재생 시작
-      debugPrint('알람: 재생 시작 시도');
-      await player.play();
-      debugPrint('알람: 재생 시작 완료 - 재생 중: ${player.playing}');
-
-      // 6. 계속 재생되도록 함
+      // 5. 루프 모드 설정 (재생 전에 설정)
       debugPrint('알람: 루프 모드 설정 시도');
       await player.setLoopMode(LoopMode.one);
       debugPrint('알람: 루프 모드 설정 완료');
+
+      // 6. 재생 시작
+      debugPrint('알람: 재생 시작 시도');
+      await player.play();
+      debugPrint('알람: 재생 시작 완료 - 재생 중: ${player.playing}');
 
       // 7. 소리가 계속 재생되도록 정적 변수에 보관
       _keepAlivePlayer = player;
       debugPrint('알람: 플레이어 참조 저장 완료');
 
-      // 8. 재생 상태 디버깅
+      // 8. 재생 상태 모니터링
       player.playerStateStream.listen((state) {
-        debugPrint('알람: 플레이어 상태 변경 - 상태: ${state.processingState}, 재생 중: ${state.playing}');
+        debugPrint('알람: 플레이어 상태 - ${state.processingState}, 재생중: ${state.playing}');
 
-        // 완료되면 다시 시작 (루프가 작동하지 않는 경우를 대비)
+        // 만약 재생이 멈추면 다시 시작
         if (state.processingState == ProcessingState.completed && _keepAlivePlayer != null) {
           debugPrint('알람: 재생 완료됨, 다시 시작');
           _keepAlivePlayer!.seek(Duration.zero);
@@ -310,8 +349,6 @@ class AlarmReceiver {
 
     } catch (e) {
       debugPrint('알람: 소리 재생 오류 발생: $e');
-      // 오류 발생 시 백업 방법으로 재생 시도
-      debugPrint('알람: 백업 재생 방법 시도');
       _playBackupSound();
     }
   }
@@ -330,15 +367,15 @@ class AlarmReceiver {
 
       debugPrint('알람: 백업 - 볼륨 설정 시도');
       await backupPlayer.setVolume(1.0);
-      debugPrint('알람: 백업 - 볼륨 설정 완료: ${backupPlayer.volume}');
-
-      debugPrint('알람: 백업 - 재생 시작 시도');
-      await backupPlayer.play();
-      debugPrint('알람: 백업 - 재생 시작 완료 - 재생 중: ${backupPlayer.playing}');
+      debugPrint('알람: 백업 - 볼륨 설정 완료');
 
       debugPrint('알람: 백업 - 루프 모드 설정 시도');
       await backupPlayer.setLoopMode(LoopMode.one);
       debugPrint('알람: 백업 - 루프 모드 설정 완료');
+
+      debugPrint('알람: 백업 - 재생 시작 시도');
+      await backupPlayer.play();
+      debugPrint('알람: 백업 - 재생 시작 완료');
 
       _keepAlivePlayer = backupPlayer;
       debugPrint('알람: 백업 - 플레이어 참조 저장 완료');

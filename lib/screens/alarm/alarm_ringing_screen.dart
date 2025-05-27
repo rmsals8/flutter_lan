@@ -36,13 +36,13 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
 
     // 맥박 애니메이션 (알람 버튼이 깜박이는 효과)
     _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
 
     _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.2,
+      begin: 0.9,
+      end: 1.1,
     ).animate(CurvedAnimation(
       parent: _pulseController,
       curve: Curves.easeInOut,
@@ -50,7 +50,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
 
     // 슬라이드 애니메이션 (화면이 아래에서 위로 올라오는 효과)
     _slideController = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
 
@@ -65,6 +65,9 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
     // 애니메이션 시작
     _pulseController.repeat(reverse: true);
     _slideController.forward();
+
+    // 진동 시작
+    _startVibration();
   }
 
   @override
@@ -72,6 +75,20 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
     _pulseController.dispose();
     _slideController.dispose();
     super.dispose();
+  }
+
+  // 진동 시작 기능
+  void _startVibration() {
+    // 강한 진동 패턴
+    HapticFeedback.heavyImpact();
+
+    // 계속 진동하도록 설정 (2초마다 반복)
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        HapticFeedback.heavyImpact();
+        _startVibration(); // 재귀 호출로 계속 진동
+      }
+    });
   }
 
   // 화면을 켜고 잠금화면 위에 표시하는 기능
@@ -87,11 +104,14 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
   // 알람을 중지하는 기능
   void _stopAlarm() async {
     try {
+      // 애니메이션 중지
+      _pulseController.stop();
+
       // 알람 소리 중지 (AlarmReceiver와 AlarmService 둘 다 시도)
       await AlarmReceiver.stopAlarmSound();
       await _alarmService.stopAlarmSound();
 
-      // 진동 중지 (있다면)
+      // 진동 중지
       HapticFeedback.lightImpact();
 
       // 화면 닫기
@@ -143,7 +163,8 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.primaryColor,
+      // 두 번째 사진처럼 파란색 배경
+      backgroundColor: const Color(0xFF3498DB),
       body: SlideTransition(
         position: _slideAnimation,
         child: SafeArea(
@@ -151,89 +172,138 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
             padding: const EdgeInsets.all(24.0),
             child: Column(
               children: [
-                // 상단 시간 표시
+                // 상단 여백
                 const SizedBox(height: 40),
 
-                // 현재 날짜
+                // 현재 날짜 (두 번째 사진 스타일)
                 Text(
                   _getCurrentDateString(),
                   style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
+                    color: Colors.white,
+                    fontSize: 18,
                     fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // 현재 시간 (큰 글씨)
+                // 현재 시간 (큰 글씨 - 두 번째 사진 스타일)
                 Text(
                   _getCurrentTimeString(),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 48,
+                    fontSize: 64,
                     fontWeight: FontWeight.bold,
+                    letterSpacing: -2.0,
                   ),
                 ),
 
                 const SizedBox(height: 60),
 
-                // 귀여운 캐릭터나 이미지 자리 (일단 아이콘으로 대체)
+                // 귀여운 캐릭터 영역 (두 번째 사진의 토끼 캐릭터 대신)
                 Container(
-                  width: 200,
-                  height: 200,
+                  width: 280,
+                  height: 280,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 2,
+                    ),
                   ),
-                  child: const Column(
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.alarm,
-                        size: 80,
-                        color: Colors.white,
+                      // 상단 캐릭터 영역 (첫 번째 토끼)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            // 토끼 이모지로 대체 (또는 커스텀 아이콘)
+                            const Text(
+                              '🐰',
+                              style: TextStyle(fontSize: 48),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'You can do it.',
+                                style: TextStyle(
+                                  color: Color(0xFF3498DB),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      SizedBox(height: 16),
-                      Text(
-                        '일어날 시간이에요!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+
+                      const SizedBox(height: 20),
+
+                      // 하단 캐릭터 영역 (두 번째 토끼)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            const Text(
+                              '🐰',
+                              style: TextStyle(fontSize: 48),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                "You're so cool.",
+                                style: TextStyle(
+                                  color: Color(0xFF3498DB),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 40),
-
-                // 알람 이름
-                Text(
-                  widget.alarm.label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const SizedBox(height: 20),
-
-                // 알람 시간
-                Text(
-                  widget.alarm.readableTime,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 18,
-                  ),
-                ),
-
                 const Spacer(),
 
-                // 알람 끄기 버튼 (맥박 애니메이션 적용)
+                // 알람 이름 표시 영역
+                if (widget.alarm.label.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Text(
+                      widget.alarm.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
+                // 알람 끄기 버튼 (두 번째 사진 스타일 - 빨간색)
                 AnimatedBuilder(
                   animation: _pulseAnimation,
                   builder: (context, child) {
@@ -246,7 +316,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
                         child: ElevatedButton(
                           onPressed: _stopAlarm,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
+                            backgroundColor: const Color(0xFFE74C3C), // 빨간색
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
@@ -257,8 +327,9 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
                           child: const Text(
                             '알람 끄기',
                             style: TextStyle(
-                              fontSize: 20,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
@@ -269,7 +340,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
 
                 const SizedBox(height: 20),
 
-                // 스누즈 버튼
+                // 스누즈 버튼 (투명한 테두리 버튼)
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -287,6 +358,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
@@ -301,7 +373,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
     );
   }
 
-  // 현재 날짜를 문자열로 반환하는 기능
+  // 현재 날짜를 문자열로 반환하는 기능 (두 번째 사진 스타일)
   String _getCurrentDateString() {
     final now = DateTime.now();
     final weekdays = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
@@ -310,7 +382,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
     return '${now.month}월 ${now.day}일 $weekday';
   }
 
-  // 현재 시간을 문자열로 반환하는 기능
+  // 현재 시간을 문자열로 반환하는 기능 (두 번째 사진 스타일)
   String _getCurrentTimeString() {
     final now = DateTime.now();
     final hour = now.hour.toString().padLeft(2, '0');
