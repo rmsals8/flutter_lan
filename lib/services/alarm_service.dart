@@ -336,6 +336,7 @@ class AlarmService {
   }
 
   // 알람 예약 메서드 - 화면 표시 기능 추가
+// 알람 예약 메서드 - 간소화된 버전
   Future<void> scheduleAlarm(Alarm alarm) async {
     debugPrint('======== 알람 예약 시작: ID=${alarm.id}, 시간=${alarm.time.hour}:${alarm.time.minute} ========');
 
@@ -351,7 +352,7 @@ class AlarmService {
 
     debugPrint('알람 예약: 다음 알람 시간 계산됨 - ${alarmTime.toString()}');
 
-    // 고유한 알람 ID 생성 (더 간단하고 안정적인 방법)
+    // 고유한 알람 ID 생성 (단순화)
     int uniqueId = alarm.id * 10000 + (alarm.time.hour * 100 + alarm.time.minute);
     int safeId = uniqueId % 1000000; // 32비트 정수 범위 내로 제한
 
@@ -360,7 +361,6 @@ class AlarmService {
     // 기존에 같은 ID로 예약된 알람이 있다면 취소
     try {
       await AndroidAlarmManager.cancel(safeId);
-      await flutterLocalNotificationsPlugin.cancel(safeId);
       debugPrint('알람 예약: 기존 알람 취소 완료');
     } catch (e) {
       debugPrint('알람 예약: 기존 알람 취소 중 오류 (무시): $e');
@@ -379,7 +379,7 @@ class AlarmService {
       'isRepeating': alarm.repeatDays.contains(true),
       'repeatDays': alarm.repeatDays,
       'setAt': DateTime.now().toString(),
-      'safeId': safeId, // 실제 사용된 ID 저장
+      'safeId': safeId,
     };
 
     await prefs.setString('alarm_data_$safeId', jsonEncode(alarmData));
@@ -401,18 +401,18 @@ class AlarmService {
 
     // 이미 지난 시간이면 다음날로 설정
     DateTime finalAlarmTime = alarmDateTime;
-    if (alarmDateTime.isBefore(now.add(const Duration(seconds: 5)))) {
+    if (alarmDateTime.isBefore(now.add(const Duration(seconds: 10)))) {
       finalAlarmTime = alarmDateTime.add(const Duration(days: 1));
       debugPrint('알람 예약: 이미 지난 시간이므로 다음날로 설정 - ${finalAlarmTime.toString()}');
     }
 
-    // 안드로이드 알람 매니저로 예약
+    // 안드로이드 알람 매니저로 예약 (단순화된 버전)
     debugPrint('알람 예약: AndroidAlarmManager.oneShotAt 호출');
 
     final success = await AndroidAlarmManager.oneShotAt(
       finalAlarmTime,
       safeId,
-      alarmCallback, // main.dart의 alarmCallback 함수 사용
+      alarmCallback, // main.dart의 간소화된 alarmCallback 사용
       exact: true,
       wakeup: true,
       alarmClock: true,
